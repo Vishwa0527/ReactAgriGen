@@ -85,11 +85,13 @@ export default function JobCards() {
 
   /* ── Enriched listing data ── */
   const enriched = useMemo(() => data.map(row => {
-    const task     = allTasks.find(t => t.id === row.maintenanceTaskID);
-    const vehicle  = task ? MOCK.vehicles.find(v => v.id === task.vehicleID) : null;
-    const employee = MOCK.employees.find(e => e.id === row.employeeID);
-    const duration = calcDuration(row.startTime, row.endTime);
-    return { ...row, _task: task, _vehicle: vehicle, _employee: employee, _duration: duration };
+    const task       = allTasks.find(t => t.id === row.maintenanceTaskID);
+    const vehicle    = task?.vehicleID    ? MOCK.vehicles.find(v => v.id === task.vehicleID)       : null;
+    const fixedAsset = task?.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === task.fixedAssetID) : null;
+    const _assetLabel = vehicle?.numbers ?? fixedAsset?.name ?? '—';
+    const employee   = MOCK.employees.find(e => e.id === row.employeeID);
+    const duration   = calcDuration(row.startTime, row.endTime);
+    return { ...row, _task: task, _vehicle: vehicle, _fixedAsset: fixedAsset, _assetLabel, _employee: employee, _duration: duration };
   }), [data]);
 
   const filtered = useMemo(() => {
@@ -99,7 +101,7 @@ export default function JobCards() {
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(r =>
-        r._vehicle?.numbers?.toLowerCase().includes(q)   ||
+        r._assetLabel?.toLowerCase().includes(q)         ||
         r._employee?.name?.toLowerCase().includes(q)     ||
         r.description?.toLowerCase().includes(q)
       );
@@ -157,13 +159,17 @@ export default function JobCards() {
   };
 
   /* Derived form values */
-  const selectedTask    = allTasks.find(t => t.id === Number(form.maintenanceTaskID));
-  const taskVehicle     = selectedTask ? MOCK.vehicles.find(v => v.id === selectedTask.vehicleID)   : null;
-  const taskWorkshop    = selectedTask ? MOCK.workshops?.find(w => w.id === selectedTask.workshopID) ?? { name: selectedTask.workshopName ?? '—' } : null;
+  const selectedTask       = allTasks.find(t => t.id === Number(form.maintenanceTaskID));
+  const taskVehicle        = selectedTask?.vehicleID    ? MOCK.vehicles.find(v => v.id === selectedTask.vehicleID)       : null;
+  const taskFixedAsset     = selectedTask?.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === selectedTask.fixedAssetID) : null;
+  const taskAssetLabel     = taskVehicle?.numbers ?? taskFixedAsset?.name ?? '—';
+  const taskWorkshop       = selectedTask ? MOCK.workshops?.find(w => w.id === selectedTask.workshopID) ?? { name: selectedTask.workshopName ?? '—' } : null;
 
   /* Edit mode: linked task */
-  const editTask        = !isAdd && modal ? allTasks.find(t => t.id === modal.maintenanceTaskID) : null;
-  const editTaskVehicle = editTask ? MOCK.vehicles.find(v => v.id === editTask.vehicleID) : null;
+  const editTask           = !isAdd && modal ? allTasks.find(t => t.id === modal.maintenanceTaskID) : null;
+  const editTaskVehicle    = editTask?.vehicleID    ? MOCK.vehicles.find(v => v.id === editTask.vehicleID)       : null;
+  const editTaskFixedAsset = editTask?.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === editTask.fixedAssetID) : null;
+  const editTaskAssetLabel = editTaskVehicle?.numbers ?? editTaskFixedAsset?.name ?? '—';
 
   /* Live duration preview (uses toInput-format times from form) */
   const liveDuration = calcDuration(
@@ -175,8 +181,8 @@ export default function JobCards() {
     <>
       <ListingPage
         idPrefix={ID}
-        title="Job Cards"
-        subtitle="Record technician work orders linked to maintenance tasks"
+        title="Work Orders"
+        subtitle="Technician work orders — linked to service schedule tasks, tracked from start to completion"
         columns={[
           {
             key: '_task',
@@ -186,10 +192,10 @@ export default function JobCards() {
             ),
           },
           {
-            key: '_vehicle',
-            label: 'Vehicle',
+            key: '_assetLabel',
+            label: 'Asset',
             render: v => (
-              <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>{v?.numbers ?? '—'}</strong>
+              <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>{v || '—'}</strong>
             ),
           },
           {
@@ -240,10 +246,11 @@ export default function JobCards() {
               >
                 <option value="">— All Tasks —</option>
                 {allTasks.map(t => {
-                  const v = MOCK.vehicles.find(veh => veh.id === t.vehicleID);
+                  const v = t.vehicleID    ? MOCK.vehicles.find(veh => veh.id === t.vehicleID)       : null;
+                  const a = t.fixedAssetID ? MOCK.fixedAssets.find(fa => fa.id === t.fixedAssetID)   : null;
                   return (
                     <option key={t.id} value={t.id}>
-                      {t.refCode} — {v?.numbers ?? '—'}
+                      {t.refCode} — {v?.numbers ?? a?.name ?? '—'}
                     </option>
                   );
                 })}
@@ -304,10 +311,11 @@ export default function JobCards() {
                 >
                   <option value="">— Select Task —</option>
                   {allTasks.map(t => {
-                    const v = MOCK.vehicles.find(veh => veh.id === t.vehicleID);
+                    const v = t.vehicleID    ? MOCK.vehicles.find(veh => veh.id === t.vehicleID)     : null;
+                    const a = t.fixedAssetID ? MOCK.fixedAssets.find(fa => fa.id === t.fixedAssetID) : null;
                     return (
                       <option key={t.id} value={t.id}>
-                        {t.refCode} — {fmtDate(t.date)} — {v?.numbers ?? '—'}
+                        {t.refCode} — {fmtDate(t.date)} — {v?.numbers ?? a?.name ?? '—'}
                       </option>
                     );
                   })}
@@ -347,7 +355,7 @@ export default function JobCards() {
                     </p>
                     <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                       {fmtDate(selectedTask.date)}
-                      {taskVehicle ? ` · ${taskVehicle.numbers}` : ''}
+                      {taskAssetLabel !== '—' ? ` · ${taskAssetLabel}` : ''}
                       {taskWorkshop ? ` · ${taskWorkshop.name}` : ''}
                     </p>
                   </div>
@@ -396,7 +404,7 @@ export default function JobCards() {
                 </p>
                 <p style={{ fontSize: 12, color: 'var(--primary-dark)' }}>
                   {editTask ? fmtDate(editTask.date) : ''}
-                  {editTaskVehicle ? ` · ${editTaskVehicle.numbers}` : ''}
+                  {editTaskAssetLabel !== '—' ? ` · ${editTaskAssetLabel}` : ''}
                   {editTask?.workshopName ? ` · ${editTask.workshopName}` : ''}
                 </p>
               </div>

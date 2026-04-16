@@ -30,8 +30,8 @@ export const NAV = [
   {
     section: 'Maintenance & Service',
     items: [
-      { label: 'Maintenance Tasks',      path: '/maintenance',          icon: 'settings' },
-      { label: 'Job Cards',              path: '/job-cards',            icon: 'clipboard' },
+      { label: 'Service Schedule',        path: '/maintenance',          icon: 'settings' },
+      { label: 'Work Orders',            path: '/job-cards',            icon: 'clipboard' },
       { label: 'Maintenance Records',    path: '/maintenance-records',  icon: 'check' },
       { label: 'Vehicle Service',        path: '/vehicle-service',      icon: 'service' },
     ],
@@ -74,6 +74,7 @@ export const NAV = [
       { label: 'Assets Register',        path: '/assets-register',         icon: 'building' },
       { label: 'Asset History',          path: '/asset-history',           icon: 'history' },
       { label: 'Depreciation',           path: '/depreciation',            icon: 'chart' },
+      { label: 'Post Depreciation',      path: '/depreciation/post',       icon: 'check' },
       { label: 'Dep. History',           path: '/depreciation-history',    icon: 'dollar' },
       { label: 'Asset Maintenance',     path: '/asset-maintenance',       icon: 'wrench' },
       { label: 'Estimations',           path: '/estimations',             icon: 'clipboard' },

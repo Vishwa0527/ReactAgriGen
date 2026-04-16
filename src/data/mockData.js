@@ -127,12 +127,12 @@ export const MOCK = {
     { id: 5, code: 'WTR005', techCategoryID: 3, categoryName: 'Welder',      workshopID: 5, workshopName: 'North Machinery Centre', rateType: 'Per Day',  rateAmount: 2000 },
   ],
   maintenanceTasks: [
-    { id: 1, date: '2024-10-05', refCode: 'MT-001', vehicleID: 1, workshopID: 1, workshopName: 'Main Workshop',          costTotal: 15000, mode: 'Scheduled',  taskType: 'Vehicle Service' },
-    { id: 2, date: '2024-10-07', refCode: 'MT-002', vehicleID: 5, workshopID: 1, workshopName: 'Main Workshop',          costTotal: 45000, mode: 'Breakdown',  taskType: 'Vehicle Service' },
-    { id: 3, date: '2024-10-10', refCode: 'MT-003', vehicleID: 3, workshopID: 2, workshopName: 'North Workshop',         costTotal: 8000,  mode: 'Preventive', taskType: 'Maintenance' },
-    { id: 4, date: '2024-10-12', refCode: 'MT-004', vehicleID: 2, workshopID: 1, workshopName: 'Main Workshop',          costTotal: 22000, mode: 'Scheduled',  taskType: 'Maintenance' },
-    { id: 5, date: '2024-10-08', refCode: 'MT-005', vehicleID: 6, workshopID: 4, workshopName: 'Field Equipment Bay',    costTotal: 12000, mode: 'Scheduled',  taskType: 'Equipment Service' },
-    { id: 6, date: '2024-10-15', refCode: 'MT-006', vehicleID: 7, workshopID: 5, workshopName: 'North Machinery Centre', costTotal: 18500, mode: 'Preventive', taskType: 'Maintenance' },
+    { id: 1, fixedAssetTypeID: 1, fixedAssetID: null, date: '2024-10-05', refCode: 'MT-001', vehicleID: 1, workshopID: 1, workshopName: 'Main Workshop',          costTotal: 15000, mode: 'Scheduled',  taskType: 'Vehicle Service' },
+    { id: 2, fixedAssetTypeID: 1, fixedAssetID: null, date: '2024-10-07', refCode: 'MT-002', vehicleID: 5, workshopID: 1, workshopName: 'Main Workshop',          costTotal: 45000, mode: 'Breakdown',  taskType: 'Vehicle Service' },
+    { id: 3, fixedAssetTypeID: 1, fixedAssetID: null, date: '2024-10-10', refCode: 'MT-003', vehicleID: 3, workshopID: 2, workshopName: 'North Workshop',         costTotal: 8000,  mode: 'Preventive', taskType: 'Maintenance' },
+    { id: 4, fixedAssetTypeID: 1, fixedAssetID: null, date: '2024-10-12', refCode: 'MT-004', vehicleID: 2, workshopID: 1, workshopName: 'Main Workshop',          costTotal: 22000, mode: 'Scheduled',  taskType: 'Maintenance' },
+    { id: 5, fixedAssetTypeID: 1, fixedAssetID: null, date: '2024-10-08', refCode: 'MT-005', vehicleID: 6, workshopID: 4, workshopName: 'Field Equipment Bay',    costTotal: 12000, mode: 'Scheduled',  taskType: 'Maintenance' },
+    { id: 6, fixedAssetTypeID: 1, fixedAssetID: null, date: '2024-10-15', refCode: 'MT-006', vehicleID: 7, workshopID: 5, workshopName: 'North Machinery Centre', costTotal: 18500, mode: 'Preventive', taskType: 'Maintenance' },
   ],
   jobCards: [
     { id: 1, maintenanceTaskID: 1, vehicleID: 1, employeeID: 201, employeeName: 'Pradeep Jayawardena', workshopID: 1, startTime: '2024-10-05 08:00', endTime: '2024-10-05 14:00', description: 'Engine oil change & filter replacement',                  costOfService: 12000 },

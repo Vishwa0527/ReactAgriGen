@@ -10,7 +10,7 @@
 
 ## 1. Global Conventions
 
-### Base URL
+### Base URL 
 ```
 https://{host}/api
 ```

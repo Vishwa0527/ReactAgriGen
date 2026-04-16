@@ -37,6 +37,7 @@ import FixedAssetForm         from './views/FixedAssetForm';
 import FixedAssetHistoryView  from './views/FixedAssetHistory';
 import DepreciationView       from './views/Depreciation';
 import DepreciationHistoryView from './views/DepreciationHistory';
+import DepreciationPosting     from './views/DepreciationPosting';
 import AssetMaintenanceView   from './views/AssetMaintenance';
 import AssetMaintenanceForm   from './views/AssetMaintenanceForm';
 import EstimationsView        from './views/Estimations';
@@ -147,6 +148,7 @@ function AppShell() {
             <Route path="/assets-register/edit/:id" element={<FixedAssetForm />} />
             <Route path="/asset-history"          element={<FixedAssetHistoryView />} />
             <Route path="/depreciation"            element={<DepreciationView />} />
+            <Route path="/depreciation/post"       element={<DepreciationPosting />} />
             <Route path="/depreciation-history"    element={<DepreciationHistoryView />} />
             <Route path="/asset-maintenance"       element={<AssetMaintenanceView />} />
             <Route path="/asset-maintenance/add"   element={<AssetMaintenanceForm />} />

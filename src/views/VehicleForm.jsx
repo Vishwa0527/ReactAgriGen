@@ -4,6 +4,7 @@ import { MOCK, nameOf } from '../data/mockData';
 import { vehicleStore } from '../data/vehicleStore';
 import { fixedAssetStore } from '../data/fixedAssetStore';
 import { depreciationStore } from '../data/depreciationStore';
+import { fixedAssetHistoryStore } from '../data/fixedAssetHistoryStore';
 import { GroupEstateFields } from '../components/GroupEstateFields';
 import { Icon } from '../components/Icon';
 
@@ -102,6 +103,59 @@ export default function VehicleForm() {
       residualValue:       parseFloat(form.residualValue)      || 0,
       depreciationValue:   parseFloat(form.depreciationValue)  || 0,
     };
+
+    /* ── Auto-create Fixed Asset when cost is entered and no manual link ── */
+    if (!isEdit && payload.costOfAsset > 0 && !payload.fixedAssetID) {
+      const faCode     = fixedAssetStore.nextCode();
+      const assetName  = `${payload.brand} ${payload.model} — ${payload.numbers}`;
+      const today      = new Date().toISOString().slice(0, 10);
+      const depValue   = depreciationStore.calculate(
+        payload.costOfAsset, payload.residualValue, payload.usefulLifeYears
+      );
+
+      const newAssetId = fixedAssetStore.add({
+        code:                 faCode,
+        name:                 assetName,
+        fixedAssetTypeID:     payload.fixedAssetTypeID,
+        fixedAssetCategoryID: null,
+        groupID:              payload.groupID,
+        estateID:             payload.estateID,
+        totalCostOfAsset:     payload.costOfAsset,
+        implementationCost:   0,
+        implementationDate:   today,
+        startDate:            payload.registerYear || today,
+        usefulLifeYears:      payload.usefulLifeYears,
+        residualValue:        payload.residualValue,
+        depreciationValue:    depValue,
+        status:               'Active',
+        isWarrantyEnabled:    false,
+        warrantyStartDate:    null,
+        warrantyEndDate:      null,
+        ledgerTransactionRef: null,
+      });
+
+      /* Auto-create depreciation schedule if useful life is set */
+      if (payload.usefulLifeYears > 0) {
+        depreciationStore.add({
+          fixedAssetID:      newAssetId,
+          assetValue:        payload.costOfAsset,
+          residualValue:     payload.residualValue,
+          usefulYears:       payload.usefulLifeYears,
+          depreciationValue: depValue,
+          assetValueDate:    today,
+          status:            'Active',
+        });
+      }
+
+      /* Initial Registration snapshot in FA History */
+      const newAsset = fixedAssetStore.getById(newAssetId);
+      if (newAsset) fixedAssetHistoryStore.addSnapshot(newAsset, 'Initial Registration');
+
+      payload.fixedAssetID = newAssetId;
+      /* Keep form's depreciationValue in sync with auto-computed value */
+      payload.depreciationValue = depValue;
+    }
+
     if (isEdit) vehicleStore.update(id, payload);
     else        vehicleStore.add(payload);
     navigate('/vehicles');
@@ -267,8 +321,25 @@ export default function VehicleForm() {
           {/* ── Section 3b: Fixed Asset Link ── */}
           <section>
             <p className="section-label">Fixed Asset Link</p>
+
+            {/* Auto-link notice: shown on create when cost is entered and no manual link chosen */}
+            {!isEdit && parseFloat(form.costOfAsset) > 0 && !form.fixedAssetID && (
+              <div style={{
+                marginBottom: 12, padding: '10px 14px',
+                background: 'var(--primary-light)',
+                border: '1px solid var(--primary-lighter, #bfdbfe)',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 12, color: 'var(--primary-dark)',
+              }}>
+                <Icon name="link" style={{ width: 13, height: 13, flexShrink: 0 }} />
+                A Fixed Asset record (<strong>{fixedAssetStore.nextCode()}</strong>) and depreciation schedule will be
+                auto-created and linked when you save. To link an existing asset instead, select it below.
+              </div>
+            )}
+
             <div className="form-grid form-grid-2">
-              <Field label="Linked Fixed Asset" hint="Optional — link to FA module for financial tracking">
+              <Field label="Linked Fixed Asset" hint="Optional — select an existing asset to link manually">
                 <select
                   id={`${ID}-select-fixedAssetID`}
                   className="form-control"
