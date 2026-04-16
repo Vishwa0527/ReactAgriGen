@@ -54,11 +54,12 @@ export default function MaintenanceRecords() {
 
   /* ── Enriched listing data ── */
   const enriched = useMemo(() => data.map(r => {
-    const task     = maintenanceTaskStore.getById(r.maintenanceTaskID);
-    const vehicle  = MOCK.vehicles.find(v => v.id === r.vehicleID);
-    const workshop = allWs.find(w => w.id === task?.workshopID);
-    const estate   = MOCK.estates.find(e => e.id === vehicle?.estateID);
-    return { ...r, _task: task, _vehicle: vehicle, _workshop: workshop, _estate: estate };
+    const task       = maintenanceTaskStore.getById(r.maintenanceTaskID);
+    const vehicle    = task?.vehicleID    ? MOCK.vehicles.find(v => v.id === task.vehicleID)       : null;
+    const fixedAsset = task?.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === task.fixedAssetID) : null;
+    const _assetLabel = vehicle?.numbers ?? fixedAsset?.name ?? '—';
+    const workshop   = allWs.find(w => w.id === task?.workshopID);
+    return { ...r, _task: task, _vehicle: vehicle, _fixedAsset: fixedAsset, _assetLabel, _workshop: workshop };
   }), [data]);
 
   const filtered = useMemo(() => {
@@ -67,8 +68,8 @@ export default function MaintenanceRecords() {
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(r =>
-        r._vehicle?.numbers?.toLowerCase().includes(q) ||
-        r._task?.refCode?.toLowerCase().includes(q)    ||
+        r._assetLabel?.toLowerCase().includes(q)    ||
+        r._task?.refCode?.toLowerCase().includes(q) ||
         r.description?.toLowerCase().includes(q)
       );
     }
@@ -76,11 +77,13 @@ export default function MaintenanceRecords() {
   }, [enriched, filterTaskID, search]);
 
   /* ── Derived task for current form selection ── */
-  const selectedTask = form.maintenanceTaskID
+  const selectedTask    = form.maintenanceTaskID
     ? maintenanceTasks.find(t => t.id === Number(form.maintenanceTaskID))
     : null;
-  const taskVehicle   = selectedTask ? MOCK.vehicles.find(v => v.id === selectedTask.vehicleID) : null;
-  const taskWorkshop  = selectedTask ? allWs.find(w => w.id === selectedTask.workshopID) : null;
+  const taskVehicle     = selectedTask?.vehicleID    ? MOCK.vehicles.find(v => v.id === selectedTask.vehicleID)       : null;
+  const taskFixedAsset  = selectedTask?.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === selectedTask.fixedAssetID) : null;
+  const taskAssetLabel  = taskVehicle?.numbers ?? taskFixedAsset?.name ?? '—';
+  const taskWorkshop    = selectedTask ? allWs.find(w => w.id === selectedTask.workshopID) : null;
 
   /* ── Helpers ── */
   const set = (key, val) => {
@@ -163,9 +166,11 @@ export default function MaintenanceRecords() {
   };
 
   /* Task for edit mode display */
-  const editTask     = !isAdd && modal ? maintenanceTaskStore.getById(modal.maintenanceTaskID) : null;
-  const editVehicle  = editTask ? MOCK.vehicles.find(v => v.id === editTask.vehicleID) : null;
-  const editWorkshop = editTask ? allWs.find(w => w.id === editTask.workshopID) : null;
+  const editTask       = !isAdd && modal ? maintenanceTaskStore.getById(modal.maintenanceTaskID) : null;
+  const editVehicle    = editTask?.vehicleID    ? MOCK.vehicles.find(v => v.id === editTask.vehicleID)       : null;
+  const editFixedAsset = editTask?.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === editTask.fixedAssetID) : null;
+  const editAssetLabel = editVehicle?.numbers ?? editFixedAsset?.name ?? '—';
+  const editWorkshop   = editTask ? allWs.find(w => w.id === editTask.workshopID) : null;
 
   const isFilterActive = filterTaskID || search;
 
@@ -192,9 +197,9 @@ export default function MaintenanceRecords() {
             render: v => <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fmtDate(v)}</span>,
           },
           {
-            key: '_vehicle',
-            label: 'Vehicle',
-            render: v => <strong style={{ fontSize: 13 }}>{v?.numbers ?? '—'}</strong>,
+            key: '_assetLabel',
+            label: 'Asset',
+            render: v => <strong style={{ fontSize: 13 }}>{v || '—'}</strong>,
           },
           {
             key: '_workshop',
@@ -236,10 +241,11 @@ export default function MaintenanceRecords() {
               >
                 <option value="">— All Tasks —</option>
                 {maintenanceTasks.map(t => {
-                  const v = MOCK.vehicles.find(vv => vv.id === t.vehicleID);
+                  const v = t.vehicleID    ? MOCK.vehicles.find(vv => vv.id === t.vehicleID)     : null;
+                  const a = t.fixedAssetID ? MOCK.fixedAssets.find(fa => fa.id === t.fixedAssetID) : null;
                   return (
                     <option key={t.id} value={t.id}>
-                      {t.refCode} — {fmtDate(t.date)} — {v?.numbers ?? '—'}
+                      {t.refCode} — {fmtDate(t.date)} — {v?.numbers ?? a?.name ?? '—'}
                     </option>
                   );
                 })}
@@ -250,7 +256,7 @@ export default function MaintenanceRecords() {
               <input
                 id={`${ID}-input-search`}
                 className="form-control"
-                placeholder="Search by task ref., vehicle or description…"
+                placeholder="Search by task ref., asset or description…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -281,7 +287,7 @@ export default function MaintenanceRecords() {
           subtitle={
             isAdd
               ? 'Log a maintenance or repair event under a Maintenance task'
-              : `${editTask?.refCode ?? ''} — ${editVehicle?.numbers ?? ''} · ${fmtDate(modal.date)}`
+              : `${editTask?.refCode ?? ''} — ${editAssetLabel} · ${fmtDate(modal.date)}`
           }
           onClose={close}
           onSave={save}
@@ -302,10 +308,11 @@ export default function MaintenanceRecords() {
                 >
                   <option value="">— Select Maintenance Task —</option>
                   {maintenanceTasks.map(t => {
-                    const tv = MOCK.vehicles.find(v => v.id === t.vehicleID);
+                    const tv = t.vehicleID    ? MOCK.vehicles.find(v => v.id === t.vehicleID)       : null;
+                    const ta = t.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === t.fixedAssetID) : null;
                     return (
                       <option key={t.id} value={t.id}>
-                        {t.refCode} — {fmtDate(t.date)} — {tv?.numbers ?? '—'}
+                        {t.refCode} — {fmtDate(t.date)} — {tv?.numbers ?? ta?.name ?? '—'}
                       </option>
                     );
                   })}
@@ -325,11 +332,11 @@ export default function MaintenanceRecords() {
                   display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8,
                 }}>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: '#92400e', textTransform: 'uppercase', marginBottom: 2 }}>Vehicle</div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: '#92400e', textTransform: 'uppercase', marginBottom: 2 }}>Asset</div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#78350f' }}>
-                      {taskVehicle?.numbers ?? '—'}
+                      {taskAssetLabel}
                     </div>
-                    <div style={{ fontSize: 11, color: '#92400e' }}>{taskVehicle?.brand} {taskVehicle?.model}</div>
+                    {taskVehicle && <div style={{ fontSize: 11, color: '#92400e' }}>{taskVehicle.brand} {taskVehicle.model}</div>}
                   </div>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: '#92400e', textTransform: 'uppercase', marginBottom: 2 }}>Workshop</div>
@@ -357,9 +364,9 @@ export default function MaintenanceRecords() {
                 <div style={{ fontSize: 11, color: '#92400e' }}>{editTask?.mode}</div>
               </div>
               <div>
-                <div style={{ fontSize: 10, fontWeight: 600, color: '#92400e', textTransform: 'uppercase', marginBottom: 2 }}>Vehicle</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#78350f' }}>{editVehicle?.numbers ?? '—'}</div>
-                <div style={{ fontSize: 11, color: '#92400e' }}>{editVehicle?.brand} {editVehicle?.model}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: '#92400e', textTransform: 'uppercase', marginBottom: 2 }}>Asset</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#78350f' }}>{editAssetLabel}</div>
+                {editVehicle && <div style={{ fontSize: 11, color: '#92400e' }}>{editVehicle.brand} {editVehicle.model}</div>}
               </div>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: '#92400e', textTransform: 'uppercase', marginBottom: 2 }}>Workshop</div>
@@ -524,7 +531,7 @@ export default function MaintenanceRecords() {
             <div className="card-body">
               <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.7 }}>
                 Delete maintenance record for{' '}
-                <strong>{confirmDelete._vehicle?.numbers ?? '—'}</strong>?
+                <strong>{confirmDelete._assetLabel ?? '—'}</strong>?
               </p>
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
                 {confirmDelete._task?.refCode ?? '—'} &nbsp;·&nbsp;

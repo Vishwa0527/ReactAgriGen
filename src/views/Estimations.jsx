@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { estimationStore } from '../data/estimationStore';
+import { assetMaintenanceStore } from '../data/assetMaintenanceStore';
 import { fixedAssetStore } from '../data/fixedAssetStore';
 import { workshopStore } from '../data/workshopStore';
 import { MOCK, nameOf } from '../data/mockData';
@@ -9,7 +11,7 @@ import { Icon } from '../components/Icon';
 
 const ID = 'est';
 
-const STATUS_BADGE = { Pending: 'badge-warning', Approved: 'badge-success', Rejected: 'badge-danger' };
+const STATUS_BADGE = { Pending: 'badge-warning', Approved: 'badge-success', Rejected: 'badge-danger', Converted: 'badge-info' };
 
 function fmtCurrency(v) {
   return `Rs. ${Number(v || 0).toLocaleString('en-LK', { maximumFractionDigits: 0 })}`;
@@ -42,6 +44,7 @@ function validate(form, editingID) {
 }
 
 export default function Estimations() {
+  const navigate = useNavigate();
   const [data, setData]       = useState(() => estimationStore.getAll());
   const [assets]              = useState(() => fixedAssetStore.getAll());
   const [workshops]           = useState(() => workshopStore.getAll());
@@ -50,7 +53,8 @@ export default function Estimations() {
   const [errors, setErrors]   = useState({});
   const [search, setSearch]   = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmDelete, setConfirmDelete]   = useState(null);
+  const [confirmConvert, setConfirmConvert] = useState(null);  // row to convert
 
   /* Enrichment */
   const enriched = useMemo(() => data.map(e => ({
@@ -165,6 +169,35 @@ export default function Estimations() {
     setConfirmDelete(null);
   };
 
+  const doConvert = () => {
+    const est = confirmConvert;
+    const asset = assets.find(a => a.id === est.fixedAssetID);
+    const newMaintenanceId = assetMaintenanceStore.add({
+      maintenanceCode:      assetMaintenanceStore.nextCode(),
+      fixedAssetID:         est.fixedAssetID,
+      maintenanceDate:      est.estimationDate,
+      workshopID:           est.workshopID,
+      groupID:              est.groupID || asset?.groupID || null,
+      estateID:             est.estateID || asset?.estateID || null,
+      totalMaintenanceCost: est.totalEstimatedCost || 0,
+      status:               'Active',
+      details:              [],
+      costs: [{
+        estimateCode:        est.estimateCode,
+        totalMaintenanceCost: est.totalEstimatedCost || 0,
+        maintenanceDate:     est.estimationDate,
+        workshopID:          est.workshopID,
+        fixedAssetID:        est.fixedAssetID,
+        groupID:             est.groupID || asset?.groupID || null,
+        estateID:            est.estateID || asset?.estateID || null,
+      }],
+    });
+    estimationStore.convert(est.id, newMaintenanceId);
+    setData(estimationStore.getAll());
+    setConfirmConvert(null);
+    navigate(`/asset-maintenance/edit/${newMaintenanceId}`);
+  };
+
   return (
     <>
       {/* Stats */}
@@ -240,12 +273,38 @@ export default function Estimations() {
             label: 'Status',
             render: v => <span className={`badge ${STATUS_BADGE[v] ?? 'badge-neutral'}`}>{v}</span>,
           },
+          {
+            key: 'id',
+            label: 'Convert',
+            render: (_, row) => {
+              if (row.status === 'Converted') {
+                return (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    AM-{String(row.convertedMaintenanceID).slice(-4) || '—'}
+                  </span>
+                );
+              }
+              if (row.status !== 'Approved') {
+                return <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>;
+              }
+              return (
+                <button
+                  id={`est-btn-convert-${row.id}`}
+                  className="btn btn-sm btn-success"
+                  style={{ fontSize: 11, padding: '3px 10px', height: 26 }}
+                  onClick={() => setConfirmConvert(row)}
+                >
+                  Convert
+                </button>
+              );
+            },
+          },
         ]}
         data={filtered}
         onAdd={() => open(null)}
         addLabel="New Estimation"
-        onEdit={open}
-        onDelete={row => setConfirmDelete(row)}
+        onEdit={row => row.status !== 'Converted' ? open(row) : undefined}
+        onDelete={row => row.status !== 'Converted' ? setConfirmDelete(row) : undefined}
         filterSlot={
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div className="form-group" style={{ flex: 1, minWidth: 200, marginBottom: 0 }}>
@@ -417,6 +476,66 @@ export default function Estimations() {
             </>
           )}
         </FormModal>
+      )}
+
+      {/* ── Convert to Maintenance Modal ── */}
+      {confirmConvert && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div className="card fade-up" style={{ width: '100%', maxWidth: 480 }}>
+            <div className="card-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{
+                  width: 36, height: 36, borderRadius: 'var(--radius-md)',
+                  background: '#dcfce7', color: 'var(--success)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <Icon name="check" style={{ width: 17, height: 17 }} />
+                </span>
+                <div>
+                  <div className="card-header-title">Convert to Asset Maintenance</div>
+                  <div className="card-header-sub">{confirmConvert.estimateCode} — {nameOf.fixedAssetName(confirmConvert.fixedAssetID)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="card-body">
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 12 }}>
+                This will create a new <strong>Asset Maintenance</strong> record pre-filled with this estimation's
+                details. You will be taken to the maintenance form to review and finalise it.
+              </p>
+              <div style={{ padding: '10px 14px', background: 'var(--bg-page)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Estimate Code</span>
+                  <span style={{ fontWeight: 700 }}>{confirmConvert.estimateCode}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Estimated Cost</span>
+                  <span style={{ fontWeight: 700 }}>{fmtCurrency(confirmConvert.totalEstimatedCost)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Line Items</span>
+                  <span style={{ fontWeight: 700 }}>{confirmConvert.details?.length || 0}</span>
+                </div>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--warning)', marginTop: 10, fontWeight: 600 }}>
+                The estimation status will change to "Converted" and cannot be edited or deleted.
+              </p>
+            </div>
+            <div className="card-footer">
+              <button
+                id="est-btn-convert-cancel"
+                className="btn btn-secondary"
+                onClick={() => setConfirmConvert(null)}
+              >Cancel</button>
+              <button
+                id="est-btn-convert-confirm"
+                className="btn btn-success"
+                onClick={doConvert}
+              >
+                <Icon name="check" style={{ width: 14, height: 14 }} /> Convert &amp; Open Maintenance
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Confirmation */}

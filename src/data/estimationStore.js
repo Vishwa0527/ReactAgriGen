@@ -64,6 +64,18 @@ export const estimationStore = {
     _estimations = _estimations.filter(e => e.id !== Number(id));
   },
 
+  /**
+   * Mark an estimation as Converted and record the resulting maintenance ID.
+   * Called after assetMaintenanceStore.add() returns the new record ID.
+   */
+  convert: (id, maintenanceID) => {
+    _estimations = _estimations.map(e =>
+      e.id === Number(id)
+        ? { ...e, status: 'Converted', convertedMaintenanceID: Number(maintenanceID) }
+        : e
+    );
+  },
+
   /** Total estimated cost across all records */
   totalEstimatedCost: () => _estimations.reduce((s, e) => s + (e.totalEstimatedCost || 0), 0),
   pendingCount:       () => _estimations.filter(e => e.status === 'Pending').length,

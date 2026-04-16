@@ -8,7 +8,12 @@ import { Icon } from '../components/Icon';
 
 const ID = 'mt';
 
-const EMPTY = { refCode: '', date: '', vehicleID: '', workshopID: '', mode: 'Scheduled', taskType: 'Vehicle Service', costTotal: '', notes: '' };
+const EMPTY = {
+  refCode: '', date: '',
+  fixedAssetTypeID: '', vehicleID: '', fixedAssetID: '',
+  workshopID: '', mode: 'Scheduled', taskType: 'Maintenance',
+  costTotal: '', notes: '',
+};
 
 const MODES = ['Scheduled', 'Preventive', 'Breakdown', 'Inspection'];
 
@@ -37,9 +42,14 @@ function validate(form, editingID) {
   } else if (!maintenanceTaskStore.isRefCodeUnique(form.refCode.trim().toUpperCase(), editingID)) {
     e.refCode = 'Reference code already exists';
   }
-  if (!form.taskType)   e.taskType   = 'Task type is required';
-  if (!form.date)       e.date       = 'Date is required';
-  if (!form.vehicleID)  e.vehicleID  = 'Vehicle is required';
+  if (!form.fixedAssetTypeID) e.fixedAssetTypeID = 'Asset type is required';
+  if (!form.taskType)         e.taskType         = 'Task type is required';
+  if (!form.date)             e.date             = 'Date is required';
+  if (Number(form.fixedAssetTypeID) === 1) {
+    if (!form.vehicleID)    e.vehicleID    = 'Vehicle is required';
+  } else if (form.fixedAssetTypeID) {
+    if (!form.fixedAssetID) e.fixedAssetID = 'Asset is required';
+  }
   if (!form.workshopID) e.workshopID = 'Workshop is required';
   if (!form.mode)       e.mode       = 'Mode is required';
   if (form.costTotal === '' || form.costTotal == null) {
@@ -60,20 +70,22 @@ export default function MaintenanceTasks() {
   const [search, setSearch]           = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  /* UI-only modal filters */
+  /* UI-only modal filters (vehicle cascade) */
   const [filterGroupID,  setFilterGroupID]  = useState('');
   const [filterEstateID, setFilterEstateID] = useState('');
 
-  const isAdd    = modal === 'add';
+  const isAdd     = modal === 'add';
   const editingID = !isAdd && modal ? modal.id : null;
   const allWorkshops = workshopStore.getAll();
 
   /* ── Enriched listing data ── */
   const enriched = useMemo(() => data.map(r => {
-    const vehicle  = MOCK.vehicles.find(v => v.id === r.vehicleID);
-    const workshop = allWorkshops.find(w => w.id === r.workshopID);
-    const estate   = vehicle ? MOCK.estates.find(e => e.id === vehicle.estateID) : null;
-    return { ...r, _vehicle: vehicle, _workshop: workshop, _estate: estate };
+    const vehicle    = r.vehicleID    ? MOCK.vehicles.find(v => v.id === r.vehicleID)       : null;
+    const fixedAsset = r.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === r.fixedAssetID) : null;
+    const workshop   = allWorkshops.find(w => w.id === r.workshopID);
+    const estate     = vehicle ? MOCK.estates.find(e => e.id === vehicle.estateID) : null;
+    const _assetLabel = vehicle?.numbers ?? fixedAsset?.name ?? '—';
+    return { ...r, _vehicle: vehicle, _fixedAsset: fixedAsset, _assetLabel, _workshop: workshop, _estate: estate };
   }), [data]);
 
   const filtered = useMemo(() => {
@@ -83,13 +95,13 @@ export default function MaintenanceTasks() {
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(r =>
-        r.refCode?.toLowerCase().includes(q)              ||
-        r._vehicle?.numbers?.toLowerCase().includes(q)   ||
+        r.refCode?.toLowerCase().includes(q)          ||
+        r._assetLabel?.toLowerCase().includes(q)      ||
         r._workshop?.name?.toLowerCase().includes(q)
       );
     }
     return result;
-  }, [enriched, filterMode, search]);
+  }, [enriched, filterMode, filterType, search]);
 
   /* ── Modal filter-derived lists ── */
   const filteredEstates = filterGroupID
@@ -102,10 +114,34 @@ export default function MaintenanceTasks() {
     return true;
   });
 
+  /* Fixed assets filtered by selected non-vehicle type */
+  const modalFixedAssets = form.fixedAssetTypeID && Number(form.fixedAssetTypeID) !== 1
+    ? MOCK.fixedAssets.filter(a => a.fixedAssetTypeID === Number(form.fixedAssetTypeID))
+    : [];
+
+  /* Workshops filtered by selected asset type */
+  const modalWorkshops = allWorkshops.filter(w =>
+    !form.fixedAssetTypeID || w.fixedAssetTypeID === Number(form.fixedAssetTypeID)
+  );
+
   /* ── Helpers ── */
   const set = (key, val) => {
     setForm(f => ({ ...f, [key]: val }));
     if (errors[key]) setErrors(e => ({ ...e, [key]: undefined }));
+  };
+
+  const changeAssetType = val => {
+    setForm(f => ({
+      ...f,
+      fixedAssetTypeID: val,
+      vehicleID:        '',
+      fixedAssetID:     '',
+      workshopID:       '',
+      taskType:         Number(val) === 1 ? f.taskType : 'Maintenance',
+    }));
+    setFilterGroupID('');
+    setFilterEstateID('');
+    setErrors(e => ({ ...e, fixedAssetTypeID: undefined, vehicleID: undefined, fixedAssetID: undefined, workshopID: undefined }));
   };
 
   const changeGroup = val => {
@@ -127,14 +163,16 @@ export default function MaintenanceTasks() {
     setErrors({});
     if (row) {
       setForm({
-        refCode:   row.refCode   ?? '',
-        date:      row.date      ?? '',
-        vehicleID: row.vehicleID ?? '',
-        workshopID:row.workshopID?? '',
-        mode:      row.mode      ?? 'Scheduled',
-        taskType:  row.taskType  ?? 'Vehicle Service',
-        costTotal: row.costTotal ?? '',
-        notes:     row.notes     ?? '',
+        refCode:          row.refCode          ?? '',
+        date:             row.date             ?? '',
+        fixedAssetTypeID: row.fixedAssetTypeID ?? '',
+        vehicleID:        row.vehicleID        ?? '',
+        fixedAssetID:     row.fixedAssetID     ?? '',
+        workshopID:       row.workshopID       ?? '',
+        mode:             row.mode             ?? 'Scheduled',
+        taskType:         row.taskType         ?? 'Maintenance',
+        costTotal:        row.costTotal        ?? '',
+        notes:            row.notes            ?? '',
       });
     } else {
       setForm({ ...EMPTY, refCode: maintenanceTaskStore.nextRefCode() });
@@ -147,14 +185,17 @@ export default function MaintenanceTasks() {
   const save = () => {
     const errs = validate(form, editingID);
     if (Object.keys(errs).length) { setErrors(errs); return; }
-    const ws = allWorkshops.find(w => w.id === Number(form.workshopID));
+    const ws = modalWorkshops.find(w => w.id === Number(form.workshopID));
+    const isVehicle = Number(form.fixedAssetTypeID) === 1;
     const payload = {
       ...form,
-      refCode:      form.refCode.trim().toUpperCase(),
-      vehicleID:    Number(form.vehicleID),
-      workshopID:   Number(form.workshopID),
-      costTotal:    Number(form.costTotal),
-      workshopName: ws?.name ?? '',
+      refCode:          form.refCode.trim().toUpperCase(),
+      fixedAssetTypeID: Number(form.fixedAssetTypeID),
+      vehicleID:        isVehicle ? Number(form.vehicleID)    : null,
+      fixedAssetID:     isVehicle ? null                      : Number(form.fixedAssetID),
+      workshopID:       Number(form.workshopID),
+      costTotal:        Number(form.costTotal),
+      workshopName:     ws?.name ?? '',
     };
     if (isAdd) maintenanceTaskStore.add(payload);
     else       maintenanceTaskStore.update(modal.id, payload);
@@ -168,14 +209,16 @@ export default function MaintenanceTasks() {
     setConfirmDelete(null);
   };
 
-  const editVehicle = !isAdd && modal ? MOCK.vehicles.find(v => v.id === modal.vehicleID) : null;
+  const editVehicle    = !isAdd && modal?.vehicleID    ? MOCK.vehicles.find(v => v.id === modal.vehicleID)       : null;
+  const editFixedAsset = !isAdd && modal?.fixedAssetID ? MOCK.fixedAssets.find(a => a.id === modal.fixedAssetID) : null;
+  const editAssetType  = !isAdd && modal ? MOCK.fixedAssetTypes.find(t => t.id === modal.fixedAssetTypeID) : null;
 
   return (
     <>
       <ListingPage
         idPrefix={ID}
-        title="Maintenance Tasks"
-        subtitle="Schedule and track vehicle maintenance — scheduled, preventive, breakdown and inspections"
+        title="Service Schedule"
+        subtitle="Plan and schedule asset maintenance — scheduled, preventive, breakdown and inspections"
         columns={[
           {
             key: 'refCode',
@@ -205,11 +248,11 @@ export default function MaintenanceTasks() {
             render: v => <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{fmtDate(v)}</span>,
           },
           {
-            key: '_vehicle',
-            label: 'Vehicle',
-            render: v => v
-              ? <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{v.numbers}</span>
-              : '—',
+            key: '_assetLabel',
+            label: 'Asset',
+            render: v => (
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{v || '—'}</span>
+            ),
           },
           {
             key: '_workshop',
@@ -279,7 +322,7 @@ export default function MaintenanceTasks() {
               <input
                 id={`${ID}-input-search`}
                 className="form-control"
-                placeholder="Search by ref. code, vehicle or workshop…"
+                placeholder="Search by ref. code, asset or workshop…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -308,7 +351,7 @@ export default function MaintenanceTasks() {
           subtitle={
             isAdd
               ? 'Log a maintenance task — scheduled, preventive, breakdown or inspection'
-              : `${modal.refCode} — ${editVehicle?.numbers ?? ''} ${editVehicle?.brand ?? ''} ${editVehicle?.model ?? ''}`
+              : `${modal.refCode} — ${editVehicle ? `${editVehicle.numbers} ${editVehicle.brand} ${editVehicle.model}` : (editFixedAsset?.name ?? editAssetType?.name ?? '')}`
           }
           onClose={close}
           onSave={save}
@@ -318,31 +361,43 @@ export default function MaintenanceTasks() {
           <div className="form-group">
             <label className="form-label">Task Type <span className="required">*</span></label>
             {isAdd ? (
-              <div style={{ display: 'flex', gap: 8 }}>
-                {['Vehicle Service', 'Maintenance'].map(type => (
-                  <button
-                    key={type}
-                    id={`${ID}-modal-btn-type-${type.replace(' ', '-').toLowerCase()}`}
-                    type="button"
-                    style={{
-                      flex: 1, padding: '7px 0', fontSize: 13, fontWeight: 600,
-                      borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer',
-                      background: form.taskType === type ? 'var(--primary)' : 'var(--bg-page)',
-                      color:      form.taskType === type ? '#fff'           : 'var(--text-secondary)',
-                      transition: 'background 0.15s, color 0.15s',
-                    }}
-                    onClick={() => set('taskType', type)}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
+              Number(form.fixedAssetTypeID) === 1 ? (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {['Vehicle Service', 'Maintenance'].map(type => (
+                    <button
+                      key={type}
+                      id={`${ID}-modal-btn-type-${type.replace(' ', '-').toLowerCase()}`}
+                      type="button"
+                      style={{
+                        flex: 1, padding: '7px 0', fontSize: 13, fontWeight: 600,
+                        borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', cursor: 'pointer',
+                        background: form.taskType === type ? 'var(--primary)' : 'var(--bg-page)',
+                        color:      form.taskType === type ? '#fff'           : 'var(--text-secondary)',
+                        transition: 'background 0.15s, color 0.15s',
+                      }}
+                      onClick={() => set('taskType', type)}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  ...TASK_TYPE_STYLE['Maintenance'],
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>Maintenance</span>
+                  <span style={{ fontSize: 11, opacity: 0.75 }}>— set by asset type</span>
+                </div>
+              )
             ) : (
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
                 padding: '6px 12px',
                 borderRadius: 'var(--radius-sm)',
-                ...TASK_TYPE_STYLE[form.taskType],
+                ...(TASK_TYPE_STYLE[form.taskType] ?? {}),
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{form.taskType}</span>
                 <span style={{ fontSize: 11, opacity: 0.75 }}>— locked after creation</span>
@@ -364,7 +419,7 @@ export default function MaintenanceTasks() {
                 className={`form-control${errors.refCode ? ' input-error' : ''}`}
                 value={form.refCode}
                 onChange={e => set('refCode', e.target.value)}
-                placeholder="e.g. MT-005"
+                placeholder="e.g. MT-007"
               />
               {errors.refCode
                 ? <span className="field-error">{errors.refCode}</span>
@@ -417,81 +472,154 @@ export default function MaintenanceTasks() {
 
           <hr className="divider" style={{ margin: '16px 0' }} />
 
-          {/* ── Section 2: Vehicle & Workshop ── */}
-          <p className="section-label">Vehicle &amp; Workshop</p>
+          {/* ── Section 2: Asset & Workshop ── */}
+          <p className="section-label">Asset &amp; Workshop</p>
 
+          {/* Asset Type selector */}
+          <div className="form-group">
+            <label className="form-label">Asset Type <span className="required">*</span></label>
+            {isAdd ? (
+              <select
+                id={`${ID}-select-asset-type`}
+                className={`form-control${errors.fixedAssetTypeID ? ' input-error' : ''}`}
+                value={form.fixedAssetTypeID}
+                onChange={e => changeAssetType(e.target.value)}
+              >
+                <option value="">— Select Asset Type —</option>
+                {MOCK.fixedAssetTypes.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            ) : (
+              <div style={{
+                padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-page)', border: '1px solid var(--border)',
+                fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+              }}>
+                {editAssetType?.name ?? '—'}
+                <span style={{ fontSize: 11, opacity: 0.6, marginLeft: 8 }}>— locked after creation</span>
+              </div>
+            )}
+            {errors.fixedAssetTypeID && <span className="field-error">{errors.fixedAssetTypeID}</span>}
+          </div>
+
+          {/* Asset picker — conditional on asset type */}
           {isAdd ? (
-            <>
-              <div className="form-grid form-grid-2" style={{ marginBottom: 10 }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Group</label>
-                  <select
-                    id={`${ID}-select-filter-group`}
-                    className="form-control"
-                    value={filterGroupID}
-                    onChange={e => changeGroup(e.target.value)}
-                  >
-                    <option value="">— All Groups —</option>
-                    {MOCK.groups.map(g => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
+            Number(form.fixedAssetTypeID) === 1 ? (
+              /* Motor Vehicle: group / estate / vehicle cascade */
+              <>
+                <div className="form-grid form-grid-2" style={{ marginBottom: 10 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Group</label>
+                    <select
+                      id={`${ID}-select-filter-group`}
+                      className="form-control"
+                      value={filterGroupID}
+                      onChange={e => changeGroup(e.target.value)}
+                    >
+                      <option value="">— All Groups —</option>
+                      {MOCK.groups.map(g => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Estate</label>
+                    <select
+                      id={`${ID}-select-filter-estate`}
+                      className="form-control"
+                      value={filterEstateID}
+                      onChange={e => changeEstate(e.target.value)}
+                    >
+                      <option value="">— All Estates —</option>
+                      {filteredEstates.map(e => (
+                        <option key={e.id} value={e.id}>{e.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Estate</label>
+                <div className="form-group">
+                  <label className="form-label">Vehicle <span className="required">*</span></label>
                   <select
-                    id={`${ID}-select-filter-estate`}
-                    className="form-control"
-                    value={filterEstateID}
-                    onChange={e => changeEstate(e.target.value)}
+                    id={`${ID}-select-vehicle`}
+                    className={`form-control${errors.vehicleID ? ' input-error' : ''}`}
+                    value={form.vehicleID}
+                    onChange={e => set('vehicleID', e.target.value)}
                   >
-                    <option value="">— All Estates —</option>
-                    {filteredEstates.map(e => (
-                      <option key={e.id} value={e.id}>{e.name}</option>
-                    ))}
+                    <option value="">— Select Vehicle —</option>
+                    {modalVehicles.map(v => {
+                      const est = MOCK.estates.find(e => e.id === v.estateID);
+                      return (
+                        <option key={v.id} value={v.id}>
+                          {v.numbers} — {v.brand} {v.model}{!filterEstateID ? ` (${est?.name ?? '—'})` : ''}
+                        </option>
+                      );
+                    })}
                   </select>
+                  {errors.vehicleID && <span className="field-error">{errors.vehicleID}</span>}
                 </div>
-              </div>
-
+              </>
+            ) : form.fixedAssetTypeID ? (
+              /* Non-vehicle: fixed asset dropdown filtered by type */
               <div className="form-group">
-                <label className="form-label">Vehicle <span className="required">*</span></label>
+                <label className="form-label">Fixed Asset <span className="required">*</span></label>
                 <select
-                  id={`${ID}-select-vehicle`}
-                  className={`form-control${errors.vehicleID ? ' input-error' : ''}`}
-                  value={form.vehicleID}
-                  onChange={e => set('vehicleID', e.target.value)}
+                  id={`${ID}-select-fixed-asset`}
+                  className={`form-control${errors.fixedAssetID ? ' input-error' : ''}`}
+                  value={form.fixedAssetID}
+                  onChange={e => set('fixedAssetID', e.target.value)}
                 >
-                  <option value="">— Select Vehicle —</option>
-                  {modalVehicles.map(v => {
-                    const est = MOCK.estates.find(e => e.id === v.estateID);
-                    return (
-                      <option key={v.id} value={v.id}>
-                        {v.numbers} — {v.brand} {v.model}{!filterEstateID ? ` (${est?.name ?? '—'})` : ''}
-                      </option>
-                    );
-                  })}
+                  <option value="">— Select Asset —</option>
+                  {modalFixedAssets.map(a => (
+                    <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                  ))}
                 </select>
-                {errors.vehicleID && <span className="field-error">{errors.vehicleID}</span>}
+                {errors.fixedAssetID && <span className="field-error">{errors.fixedAssetID}</span>}
               </div>
-            </>
+            ) : (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                Select an asset type above to choose the asset.
+              </p>
+            )
           ) : (
-            <div
-              id={`${ID}-vehicle-display`}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
-                padding: '10px 14px',
-                background: 'var(--primary-light)', border: '1px solid var(--primary)',
-                borderRadius: 'var(--radius-sm)',
-              }}
-            >
-              <Icon name="car" style={{ width: 16, height: 16, color: 'var(--primary-dark)', flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary-dark)' }}>
-                {editVehicle?.numbers}
-              </span>
-              <span style={{ fontSize: 12, color: 'var(--primary-dark)', opacity: 0.8 }}>
-                {editVehicle?.brand} {editVehicle?.model} · Linked Vehicle
-              </span>
-            </div>
+            /* Edit mode: read-only display */
+            editVehicle ? (
+              <div
+                id={`${ID}-vehicle-display`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
+                  padding: '10px 14px',
+                  background: 'var(--primary-light)', border: '1px solid var(--primary)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                <Icon name="car" style={{ width: 16, height: 16, color: 'var(--primary-dark)', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary-dark)' }}>
+                  {editVehicle.numbers}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--primary-dark)', opacity: 0.8 }}>
+                  {editVehicle.brand} {editVehicle.model} · Linked Vehicle
+                </span>
+              </div>
+            ) : editFixedAsset ? (
+              <div
+                id={`${ID}-asset-display`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
+                  padding: '10px 14px',
+                  background: 'var(--primary-light)', border: '1px solid var(--primary)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                <Icon name="wrench" style={{ width: 16, height: 16, color: 'var(--primary-dark)', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary-dark)' }}>
+                  {editFixedAsset.code}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--primary-dark)', opacity: 0.8 }}>
+                  {editFixedAsset.name} · Linked Asset
+                </span>
+              </div>
+            ) : null
           )}
 
           <div className="form-group">
@@ -503,7 +631,7 @@ export default function MaintenanceTasks() {
               onChange={e => set('workshopID', e.target.value)}
             >
               <option value="">— Select Workshop —</option>
-              {allWorkshops.map(w => (
+              {modalWorkshops.map(w => (
                 <option key={w.id} value={w.id}>{w.code} — {w.name}</option>
               ))}
             </select>
@@ -552,7 +680,7 @@ export default function MaintenanceTasks() {
                 <strong style={{ fontFamily: 'monospace' }}>{confirmDelete.refCode}</strong>?
               </p>
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
-                {fmtDate(confirmDelete.date)} · {confirmDelete._vehicle?.numbers ?? '—'} · Rs. {confirmDelete.costTotal}
+                {fmtDate(confirmDelete.date)} · {confirmDelete._assetLabel ?? '—'} · Rs. {confirmDelete.costTotal}
               </p>
             </div>
             <div className="card-footer">

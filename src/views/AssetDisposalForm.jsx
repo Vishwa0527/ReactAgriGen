@@ -3,14 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { assetDisposalStore } from '../data/assetDisposalStore';
 import { fixedAssetStore } from '../data/fixedAssetStore';
 import { depreciationStore } from '../data/depreciationStore';
-import { MOCK } from '../data/mockData';
 import { GroupEstateFields } from '../components/GroupEstateFields';
 import { Icon } from '../components/Icon';
 
 const ID = 'adf';
 
 const DISPOSAL_TYPES = ['Sale', 'Write-Off', 'Donation', 'Scrap'];
-const STATUSES       = ['Draft', 'Approved', 'Completed'];
 
 const EMPTY = {
   groupID: '', estateID: '', fixedAssetID: '', disposalCode: '',
@@ -147,7 +145,11 @@ export default function AssetDisposalForm() {
     [form.fixedAssetID, assets]
   );
 
+  /* Read-only once a disposal has been approved or completed */
+  const isReadOnly = isEdit && existing?.status !== 'Draft';
+
   const handleSave = () => {
+    if (isReadOnly) return;
     const errs = validate(form, isEdit ? existing.id : null);
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
@@ -163,7 +165,9 @@ export default function AssetDisposalForm() {
       bookValueAtDisposal: bv,
       saleProceeds:        form.disposalType === 'Sale' ? sp : null,
       gainLossOnDisposal:  form.disposalType === 'Sale' ? sp - bv : null,
+      // status is never set by the form — managed by workflow (approve / complete)
     };
+    delete payload.status;
 
     if (isEdit) {
       assetDisposalStore.update(id, payload);
@@ -200,6 +204,30 @@ export default function AssetDisposalForm() {
       </div>
 
       <div className="card" style={{ maxWidth: 900 }}>
+
+        {/* ── Read-only banner for Approved / Completed disposals ── */}
+        {isReadOnly && (
+          <div style={{
+            margin: '16px 16px 0',
+            padding: '12px 16px',
+            background: '#fef3c7',
+            border: '1px solid #fcd34d',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            fontSize: 13,
+          }}>
+            <Icon name="alert" style={{ width: 16, height: 16, color: '#d97706', flexShrink: 0 }} />
+            <span>
+              This disposal is <strong>{existing?.status}</strong> and can no longer be edited.
+              Use the <strong>Approve</strong> / <strong>Complete</strong> workflow buttons on the Disposal list to advance its status.
+            </span>
+          </div>
+        )}
+
+        {/* fieldset[disabled] disables all descendant form controls when read-only */}
+        <fieldset disabled={isReadOnly} style={{ border: 'none', padding: 0, margin: 0 }}>
         <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
           {/* Section 1: Group & Estate */}
@@ -281,14 +309,20 @@ export default function AssetDisposalForm() {
 
               <div className="form-group">
                 <label className="form-label">Status</label>
-                <select
-                  id={`${ID}-select-status`}
-                  className="form-control"
-                  value={form.status}
-                  onChange={e => set('status', e.target.value)}
-                >
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <div style={{
+                  padding: '7px 12px',
+                  background: 'var(--bg-page)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 13,
+                  color: 'var(--text-secondary)',
+                  fontWeight: 600,
+                }}>
+                  {form.status || 'Draft'}
+                  <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 8, color: 'var(--text-muted)' }}>
+                    (managed by workflow)
+                  </span>
+                </div>
               </div>
 
               <div className="form-group">
@@ -431,6 +465,7 @@ export default function AssetDisposalForm() {
           </section>
 
         </div>
+        </fieldset>
 
         {/* Footer */}
         <div className="card-footer">
@@ -439,13 +474,15 @@ export default function AssetDisposalForm() {
             className="btn btn-secondary"
             onClick={() => navigate('/asset-disposal')}
           >Cancel</button>
-          <button
-            id={`${ID}-btn-save`}
-            className="btn btn-primary"
-            onClick={handleSave}
-          >
-            <Icon name="check" /> {isEdit ? 'Update Record' : 'Record Disposal'}
-          </button>
+          {!isReadOnly && (
+            <button
+              id={`${ID}-btn-save`}
+              className="btn btn-primary"
+              onClick={handleSave}
+            >
+              <Icon name="check" /> {isEdit ? 'Update Record' : 'Record Disposal'}
+            </button>
+          )}
         </div>
       </div>
     </div>

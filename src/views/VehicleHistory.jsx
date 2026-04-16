@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { vehicleStore } from '../data/vehicleStore';
-import { MOCK, nameOf } from '../data/mockData';
+import { nameOf } from '../data/mockData';
 import { ListingPage } from '../components/ListingPage';
 import { Icon } from '../components/Icon';
 
@@ -10,6 +10,9 @@ const ACTION_BADGE = {
   Created: 'badge-success',
   Updated: 'badge-info',
 };
+
+/* Max field tags shown inline before collapsing */
+const MAX_TAGS = 4;
 
 const STATUS_BADGE = {
   'Active':      'badge-success',
@@ -97,6 +100,31 @@ export default function VehicleHistory() {
             key: 'snapEstate',
             label: 'Estate',
             render: v => <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{v}</span>,
+          },
+          {
+            key: 'changedFields',
+            label: 'Changes',
+            render: (fields, row) => {
+              if (row.action === 'Created') {
+                return <span className="badge badge-success" style={{ fontSize: 10 }}>New vehicle</span>;
+              }
+              const list = fields || [];
+              if (list.length === 0) {
+                return <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>;
+              }
+              const visible = list.slice(0, MAX_TAGS);
+              const overflow = list.length - MAX_TAGS;
+              return (
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {visible.map(f => (
+                    <span key={f} className="badge badge-info" style={{ fontSize: 10 }}>{f}</span>
+                  ))}
+                  {overflow > 0 && (
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{overflow} more</span>
+                  )}
+                </div>
+              );
+            },
           },
           {
             key: 'id',

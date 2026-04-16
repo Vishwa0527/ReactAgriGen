@@ -21,6 +21,12 @@ const STATUS_BADGE = {
   'Completed': 'badge-success',
 };
 
+const STATUS_FLOW = {
+  'Draft':     { next: 'Approved',  label: 'Approve',  style: 'btn-primary' },
+  'Approved':  { next: 'Completed', label: 'Complete', style: 'btn-success' },
+  'Completed': null,
+};
+
 function fmtCurrency(v) {
   if (v === null || v === undefined || v === '') return '—';
   return `Rs. ${Number(v).toLocaleString('en-LK', { maximumFractionDigits: 0 })}`;
@@ -39,6 +45,10 @@ export default function AssetDisposal() {
   const [search, setSearch]               = useState('');
   const [filterType, setFilterType]       = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  /* Workflow modals */
+  const [confirmApprove, setConfirmApprove] = useState(null);   // { row }
+  const [approvedByInput, setApprovedByInput] = useState('');
+  const [confirmComplete, setConfirmComplete] = useState(null); // { row }
 
   const enriched = useMemo(() => data.map(d => ({
     ...d,
@@ -70,6 +80,20 @@ export default function AssetDisposal() {
     assetDisposalStore.remove(confirmDelete.id);
     setData(assetDisposalStore.getAll());
     setConfirmDelete(null);
+  };
+
+  const doApprove = () => {
+    if (!approvedByInput.trim()) return;
+    assetDisposalStore.approve(confirmApprove.id, approvedByInput.trim());
+    setData(assetDisposalStore.getAll());
+    setConfirmApprove(null);
+    setApprovedByInput('');
+  };
+
+  const doComplete = () => {
+    assetDisposalStore.complete(confirmComplete.id);
+    setData(assetDisposalStore.getAll());
+    setConfirmComplete(null);
   };
 
   return (
@@ -167,12 +191,33 @@ export default function AssetDisposal() {
             label: 'Status',
             render: v => <span className={`badge ${STATUS_BADGE[v] ?? 'badge-neutral'}`}>{v}</span>,
           },
+          {
+            key: 'id',
+            label: 'Workflow',
+            render: (_, row) => {
+              const flow = STATUS_FLOW[row.status];
+              if (!flow) return <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>;
+              return (
+                <button
+                  id={`${ID}-btn-workflow-${row.id}`}
+                  className={`btn btn-sm ${flow.style}`}
+                  style={{ fontSize: 11, padding: '3px 10px', height: 26 }}
+                  onClick={() => {
+                    if (flow.next === 'Approved') { setConfirmApprove(row); setApprovedByInput(''); }
+                    if (flow.next === 'Completed') setConfirmComplete(row);
+                  }}
+                >
+                  {flow.label}
+                </button>
+              );
+            },
+          },
         ]}
         data={filtered}
         onAdd={() => navigate('/asset-disposal/add')}
         addLabel="Record Disposal"
         onEdit={row => navigate(`/asset-disposal/edit/${row.id}`)}
-        onDelete={row => setConfirmDelete(row)}
+        onDelete={row => row.status === 'Draft' ? setConfirmDelete(row) : undefined}
         filterSlot={
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div className="form-group" style={{ flex: 1, minWidth: 200, marginBottom: 0 }}>
@@ -249,6 +294,99 @@ export default function AssetDisposal() {
               <button id={`${ID}-btn-del-cancel`} className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
               <button id={`${ID}-btn-del-confirm`} className="btn btn-danger" onClick={del}>
                 <Icon name="trash" style={{ width: 14, height: 14 }} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Approve Modal ── */}
+      {confirmApprove && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)',
+          zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+        }}>
+          <div className="card fade-up" style={{ width: '100%', maxWidth: 440 }}>
+            <div className="card-header">
+              <div>
+                <div className="card-header-title">Approve Disposal</div>
+                <div className="card-header-sub">{confirmApprove.disposalCode} — {assets.find(a => a.id === confirmApprove.fixedAssetID)?.name ?? '—'}</div>
+              </div>
+            </div>
+            <div className="card-body">
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                Approving this disposal will authorise it for completion. The asset will only be marked as
+                Disposed once you click <strong>Complete</strong>.
+              </p>
+              <div className="form-group">
+                <label className="form-label">Approved By <span className="required">*</span></label>
+                <input
+                  id={`${ID}-input-approvedBy`}
+                  className="form-control"
+                  value={approvedByInput}
+                  onChange={e => setApprovedByInput(e.target.value)}
+                  placeholder="Full name of authorising officer"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="card-footer">
+              <button
+                id={`${ID}-btn-approve-cancel`}
+                className="btn btn-secondary"
+                onClick={() => { setConfirmApprove(null); setApprovedByInput(''); }}
+              >Cancel</button>
+              <button
+                id={`${ID}-btn-approve-confirm`}
+                className="btn btn-primary"
+                disabled={!approvedByInput.trim()}
+                onClick={doApprove}
+              >
+                Approve Disposal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Complete Modal ── */}
+      {confirmComplete && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)',
+          zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+        }}>
+          <div className="card fade-up" style={{ width: '100%', maxWidth: 440 }}>
+            <div className="card-header">
+              <div>
+                <div className="card-header-title">Complete Disposal</div>
+                <div className="card-header-sub">{confirmComplete.disposalCode} — {assets.find(a => a.id === confirmComplete.fixedAssetID)?.name ?? '—'}</div>
+              </div>
+            </div>
+            <div className="card-body">
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Completing this disposal will:
+              </p>
+              <ul style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, paddingLeft: 20, lineHeight: 2 }}>
+                <li>Mark the linked asset as <strong>Disposed</strong></li>
+                <li>Close all active depreciation schedules</li>
+                <li>Create an immutable Asset History snapshot</li>
+              </ul>
+              <p style={{ fontSize: 12, color: 'var(--danger)', marginTop: 12, fontWeight: 600 }}>
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="card-footer">
+              <button
+                id={`${ID}-btn-complete-cancel`}
+                className="btn btn-secondary"
+                onClick={() => setConfirmComplete(null)}
+              >Cancel</button>
+              <button
+                id={`${ID}-btn-complete-confirm`}
+                className="btn btn-success"
+                onClick={doComplete}
+              >
+                Complete Disposal
               </button>
             </div>
           </div>
