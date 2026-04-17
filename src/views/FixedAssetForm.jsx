@@ -6,6 +6,8 @@ import { fixedAssetTypeStore } from '../data/fixedAssetTypeStore';
 import { fixedAssetCategoryStore } from '../data/fixedAssetCategoryStore';
 import { fixedAssetHistoryStore } from '../data/fixedAssetHistoryStore';
 import { GroupEstateFields } from '../components/GroupEstateFields';
+import { GLEffectPanel }   from '../components/GLEffectPanel';
+import { glEngine }        from '../utils/glEngine';
 import { Icon } from '../components/Icon';
 
 const ID = 'faf';
@@ -96,6 +98,14 @@ export default function FixedAssetForm() {
   );
   const [errors, setErrors] = useState({});
 
+  /* ── GL workflow state (edit-mode only; tracks without blocking form edits) ── */
+  const [glState, setGLState] = useState(() => ({
+    GLApprovalStatus: existing?.GLApprovalStatus ?? 'Draft',
+    GLPostingRef:     existing?.GLPostingRef     ?? null,
+    GLRejectionNote:  existing?.GLRejectionNote  ?? null,
+    IsPostedToGL:     existing?.IsPostedToGL     ?? false,
+  }));
+
   /* ── Cascading categories ── */
   const filteredCategories = useMemo(() =>
     form.fixedAssetTypeID
@@ -117,6 +127,50 @@ export default function FixedAssetForm() {
   const residualVal = parseFloat(form.residualValue) || 0;
   const lifeVal     = parseInt(form.usefulLifeYears) || 0;
   const calcDep     = lifeVal > 0 ? (costVal - residualVal) / lifeVal : 0;
+
+  /* ── GL workflow callbacks (only wired in edit mode) ── */
+  const glCallbacks = isEdit ? {
+    onConfirm: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval' };
+      fixedAssetStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+    onApprove: () => {
+      const result = glEngine.post({
+        transactionTypeCode:  'FA_CAPITALIZATION',
+        transactionDate:      new Date().toISOString().slice(0, 10),
+        sourceTableName:      'FixedAsset',
+        sourceRecordID:       existing.id,
+        amount:               parseFloat(form.totalCostOfAsset) || 0,
+        fixedAssetTypeID:     Number(form.fixedAssetTypeID)     || null,
+        fixedAssetCategoryID: Number(form.fixedAssetCategoryID) || null,
+        description:          `Capitalization — ${form.name}`,
+        groupID:              Number(form.groupID)  || null,
+        estateID:             Number(form.estateID) || null,
+        createdBy:            'System',
+      });
+      if (result.success) {
+        const updates = {
+          GLApprovalStatus: 'Approved',
+          IsPostedToGL:     true,
+          GLPostingRef:     result.documentReference,
+          GLApprovedDate:   new Date().toISOString().slice(0, 10),
+        };
+        fixedAssetStore.update(id, updates);
+        setGLState(s => ({ ...s, ...updates }));
+      }
+    },
+    onReject: (note) => {
+      const updates = { GLApprovalStatus: 'Rejected', GLRejectionNote: note };
+      fixedAssetStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+    onResubmit: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval', GLRejectionNote: null };
+      fixedAssetStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+  } : {};
 
   const handleSave = () => {
     const errs = validate(form, isEdit ? existing.id : null);
@@ -497,6 +551,30 @@ export default function FixedAssetForm() {
                 />
               </Field>
             </div>
+          </section>
+
+          <hr className="divider" />
+
+          {/* ── Section 8: GL Capitalization ── */}
+          <section>
+            <p className="section-label">GL Capitalization</p>
+            {!isEdit && (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Save this asset to begin the GL capitalization approval workflow.
+              </p>
+            )}
+            <GLEffectPanel
+              idPrefix={ID}
+              transactionTypeCode="FA_CAPITALIZATION"
+              fixedAssetTypeID={Number(form.fixedAssetTypeID) || null}
+              fixedAssetCategoryID={Number(form.fixedAssetCategoryID) || null}
+              amount={parseFloat(form.totalCostOfAsset) || 0}
+              glApprovalStatus={glState.GLApprovalStatus}
+              glPostingRef={glState.GLPostingRef}
+              glRejectionNote={glState.GLRejectionNote}
+              isPostedToGL={glState.IsPostedToGL}
+              {...glCallbacks}
+            />
           </section>
 
         </div>

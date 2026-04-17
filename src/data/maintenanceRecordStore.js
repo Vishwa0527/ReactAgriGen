@@ -5,7 +5,22 @@
 import { MOCK } from './mockData';
 import { workshopStockStore } from './workshopStockStore';
 
-let _records = MOCK.maintenanceRecords.map(r => ({ ...r, items: r.items ? r.items.map(i => ({ ...i })) : [] }));
+const GL_DEFAULTS = {
+  GLApprovalStatus: 'Draft',
+  GLApprovedBy:     null,
+  GLApprovedDate:   null,
+  GLRejectedBy:     null,
+  GLRejectedDate:   null,
+  GLRejectionNote:  null,
+  GLPostingRef:     null,
+  IsPostedToGL:     false,
+};
+
+let _records = MOCK.maintenanceRecords.map(r => ({
+  ...GL_DEFAULTS,
+  ...r,
+  items: r.items ? r.items.map(i => ({ ...i })) : [],
+}));
 
 export const maintenanceRecordStore = {
   getAll:       () => [..._records].sort((a, b) => b.date.localeCompare(a.date)),

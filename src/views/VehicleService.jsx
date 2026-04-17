@@ -3,9 +3,12 @@ import { MOCK } from '../data/mockData';
 import { vehicleServiceStore } from '../data/vehicleServiceStore';
 import { workshopStore } from '../data/workshopStore';
 import { maintenanceTaskStore } from '../data/maintenanceTaskStore';
-import { ListingPage } from '../components/ListingPage';
-import { FormModal } from '../components/FormModal';
-import { Icon } from '../components/Icon';
+import { ListingPage }    from '../components/ListingPage';
+import { FormModal }      from '../components/FormModal';
+import { GLStatusBadge }  from '../components/GLStatusBadge';
+import { GLEffectPanel }  from '../components/GLEffectPanel';
+import { glEngine }       from '../utils/glEngine';
+import { Icon }           from '../components/Icon';
 
 const ID = 'vs';
 
@@ -78,6 +81,9 @@ export default function VehicleService() {
   const [filterVehicleID, setFilterVehicleID] = useState('');
   const [search, setSearch]       = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [glState, setGLState] = useState({
+    GLApprovalStatus: 'Draft', GLPostingRef: null, GLRejectionNote: null, IsPostedToGL: false,
+  });
 
   const isAdd     = modal === 'add';
   const editingID = !isAdd && modal ? modal.id : null;
@@ -159,10 +165,60 @@ export default function VehicleService() {
     } else {
       setForm({ ...EMPTY });
     }
+    setGLState(row ? {
+      GLApprovalStatus: row.GLApprovalStatus ?? 'Draft',
+      GLPostingRef:     row.GLPostingRef     ?? null,
+      GLRejectionNote:  row.GLRejectionNote  ?? null,
+      IsPostedToGL:     row.IsPostedToGL     ?? false,
+    } : { GLApprovalStatus: 'Draft', GLPostingRef: null, GLRejectionNote: null, IsPostedToGL: false });
     setModal(row ?? 'add');
   };
 
   const close = () => { setModal(null); setErrors({}); };
+
+  /* ── GL callbacks (edit-mode only) ── */
+  const glCallbacks = !isAdd && modal && modal.id ? {
+    onConfirm: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval' };
+      vehicleServiceStore.update(modal.id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+      setData(vehicleServiceStore.getAll());
+    },
+    onApprove: () => {
+      const result = glEngine.post({
+        transactionTypeCode: 'FLEET_VEHICLE_SVC',
+        transactionDate:     new Date().toISOString().slice(0, 10),
+        sourceTableName:     'VehicleService',
+        sourceRecordID:      modal.id,
+        amount:              Number(form.costAmount) || 0,
+        description:         `Fleet Service — ${form.serviceDate}`,
+        createdBy:           'System',
+      });
+      if (result.success) {
+        const updates = {
+          GLApprovalStatus: 'Approved',
+          IsPostedToGL:     true,
+          GLPostingRef:     result.documentReference,
+          GLApprovedDate:   new Date().toISOString().slice(0, 10),
+        };
+        vehicleServiceStore.update(modal.id, updates);
+        setGLState(s => ({ ...s, ...updates }));
+        setData(vehicleServiceStore.getAll());
+      }
+    },
+    onReject: (note) => {
+      const updates = { GLApprovalStatus: 'Rejected', GLRejectionNote: note };
+      vehicleServiceStore.update(modal.id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+      setData(vehicleServiceStore.getAll());
+    },
+    onResubmit: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval', GLRejectionNote: null };
+      vehicleServiceStore.update(modal.id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+      setData(vehicleServiceStore.getAll());
+    },
+  } : {};
 
   const save = () => {
     const errs = validate(form);
@@ -295,6 +351,11 @@ export default function VehicleService() {
                 Rs. {Number(v).toLocaleString()}
               </span>
             ),
+          },
+          {
+            key: 'GLApprovalStatus',
+            label: 'GL Status',
+            render: (v, row) => <GLStatusBadge status={v} isPostedToGL={row.IsPostedToGL} />,
           },
         ]}
         data={filtered}
@@ -703,6 +764,25 @@ export default function VehicleService() {
               </span>
             </div>
           )}
+
+          {/* ── GL Fleet Service ── */}
+          <hr className="divider" style={{ margin: '16px 0' }} />
+          <p className="section-label">GL Fleet Service</p>
+          {isAdd && (
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+              Save this record to begin the GL approval workflow.
+            </p>
+          )}
+          <GLEffectPanel
+            idPrefix={ID}
+            transactionTypeCode="FLEET_VEHICLE_SVC"
+            amount={Number(form.costAmount) || 0}
+            glApprovalStatus={glState.GLApprovalStatus}
+            glPostingRef={glState.GLPostingRef}
+            glRejectionNote={glState.GLRejectionNote}
+            isPostedToGL={glState.IsPostedToGL}
+            {...glCallbacks}
+          />
         </FormModal>
       )}
 

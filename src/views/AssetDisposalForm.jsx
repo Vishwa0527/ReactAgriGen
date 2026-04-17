@@ -3,8 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { assetDisposalStore } from '../data/assetDisposalStore';
 import { fixedAssetStore } from '../data/fixedAssetStore';
 import { depreciationStore } from '../data/depreciationStore';
+import { depreciationHistoryStore } from '../data/depreciationHistoryStore';
 import { GroupEstateFields } from '../components/GroupEstateFields';
+import { GLEffectPanel } from '../components/GLEffectPanel';
 import { Icon } from '../components/Icon';
+import { glEngine } from '../utils/glEngine';
 
 const ID = 'adf';
 
@@ -78,6 +81,13 @@ export default function AssetDisposalForm() {
 
   const [errors, setErrors] = useState({});
 
+  const [glState, setGLState] = useState(() => ({
+    GLApprovalStatus: existing?.GLApprovalStatus ?? 'Draft',
+    GLPostingRef:     existing?.GLPostingRef     ?? null,
+    GLRejectionNote:  existing?.GLRejectionNote  ?? null,
+    IsPostedToGL:     existing?.IsPostedToGL     ?? false,
+  }));
+
   const set = (key, val) => {
     setForm(f => ({ ...f, [key]: val }));
     if (errors[key]) setErrors(e => ({ ...e, [key]: undefined }));
@@ -147,6 +157,65 @@ export default function AssetDisposalForm() {
 
   /* Read-only once a disposal has been approved or completed */
   const isReadOnly = isEdit && existing?.status !== 'Draft';
+
+  const disposalGL = useMemo(() => {
+    if (!selectedAsset) return null;
+    const purchaseCost   = Number(selectedAsset.totalCostOfAsset) || 0;
+    const accumulatedDep = depreciationHistoryStore.totalPosted(selectedAsset.id);
+    const saleProceeds   = form.disposalType === 'Sale' ? (parseFloat(form.saleProceeds) || 0) : 0;
+    return glEngine.previewDisposal({
+      purchaseCost,
+      accumulatedDep,
+      saleProceeds,
+      fixedAssetTypeID:     selectedAsset.fixedAssetTypeID     ?? null,
+      fixedAssetCategoryID: selectedAsset.fixedAssetCategoryID ?? null,
+    });
+  }, [selectedAsset, form.disposalType, form.saleProceeds]);
+
+  const glCallbacks = isEdit ? {
+    onConfirm: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval' };
+      assetDisposalStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+    onApprove: () => {
+      if (!disposalGL) return;
+      const result = glEngine.post({
+        transactionTypeCode:  disposalGL.transactionTypeCode,
+        transactionDate:      form.disposalDate || new Date().toISOString().slice(0, 10),
+        sourceTableName:      'AssetDisposal',
+        sourceRecordID:       existing.id,
+        amount:               0,
+        fixedAssetTypeID:     selectedAsset?.fixedAssetTypeID     ?? null,
+        fixedAssetCategoryID: selectedAsset?.fixedAssetCategoryID ?? null,
+        amounts:              disposalGL.amounts,
+        description:          `Disposal — ${existing?.disposalCode}`,
+        groupID:              Number(form.groupID)  || null,
+        estateID:             Number(form.estateID) || null,
+        createdBy:            'System',
+      });
+      if (result.success) {
+        const updates = {
+          GLApprovalStatus: 'Approved',
+          IsPostedToGL:     true,
+          GLPostingRef:     result.documentReference,
+          GLApprovedDate:   new Date().toISOString().slice(0, 10),
+        };
+        assetDisposalStore.update(id, updates);
+        setGLState(s => ({ ...s, ...updates }));
+      }
+    },
+    onReject: (note) => {
+      const updates = { GLApprovalStatus: 'Rejected', GLRejectionNote: note };
+      assetDisposalStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+    onResubmit: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval', GLRejectionNote: null };
+      assetDisposalStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+  } : {};
 
   const handleSave = () => {
     if (isReadOnly) return;
@@ -466,6 +535,38 @@ export default function AssetDisposalForm() {
 
         </div>
         </fieldset>
+
+        {/* ── Section 5: GL Disposal Journal — outside <fieldset> so workflow buttons are never disabled ── */}
+        <div style={{ padding: '0 20px 20px' }}>
+          <hr className="divider" />
+          <section>
+            <p className="section-label" style={{ marginBottom: 12 }}>GL Disposal Journal</p>
+            {disposalGL ? (
+              <GLEffectPanel
+                idPrefix={ID}
+                transactionTypeCode={disposalGL.transactionTypeCode}
+                fixedAssetTypeID={selectedAsset?.fixedAssetTypeID ?? null}
+                fixedAssetCategoryID={selectedAsset?.fixedAssetCategoryID ?? null}
+                amount={0}
+                amounts={disposalGL.amounts}
+                glApprovalStatus={glState.GLApprovalStatus}
+                glPostingRef={glState.GLPostingRef}
+                glRejectionNote={glState.GLRejectionNote}
+                isPostedToGL={glState.IsPostedToGL}
+                {...glCallbacks}
+              />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '16px 0' }}>
+                Select a fixed asset to preview the GL journal.
+              </div>
+            )}
+            {!isEdit && disposalGL && (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                GL posting workflow starts after saving the record.
+              </p>
+            )}
+          </section>
+        </div>
 
         {/* Footer */}
         <div className="card-footer">

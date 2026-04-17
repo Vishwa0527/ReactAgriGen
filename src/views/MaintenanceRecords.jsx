@@ -3,9 +3,12 @@ import { MOCK } from '../data/mockData';
 import { maintenanceTaskStore }  from '../data/maintenanceTaskStore';
 import { maintenanceRecordStore } from '../data/maintenanceRecordStore';
 import { workshopStore } from '../data/workshopStore';
-import { ListingPage } from '../components/ListingPage';
-import { FormModal }   from '../components/FormModal';
-import { Icon }        from '../components/Icon';
+import { ListingPage }   from '../components/ListingPage';
+import { FormModal }    from '../components/FormModal';
+import { GLStatusBadge } from '../components/GLStatusBadge';
+import { GLEffectPanel } from '../components/GLEffectPanel';
+import { glEngine }      from '../utils/glEngine';
+import { Icon }          from '../components/Icon';
 
 const ID = 'mr';
 
@@ -42,6 +45,9 @@ export default function MaintenanceRecords() {
   const [filterTaskID, setFilterTaskID] = useState('');
   const [search, setSearch]           = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [glState, setGLState] = useState({
+    GLApprovalStatus: 'Draft', GLPostingRef: null, GLRejectionNote: null, IsPostedToGL: false,
+  });
 
   const isAdd    = modal === 'add';
   const allWs    = workshopStore.getAll();
@@ -126,10 +132,60 @@ export default function MaintenanceRecords() {
         }
       : EMPTY
     );
+    setGLState(row ? {
+      GLApprovalStatus: row.GLApprovalStatus ?? 'Draft',
+      GLPostingRef:     row.GLPostingRef     ?? null,
+      GLRejectionNote:  row.GLRejectionNote  ?? null,
+      IsPostedToGL:     row.IsPostedToGL     ?? false,
+    } : { GLApprovalStatus: 'Draft', GLPostingRef: null, GLRejectionNote: null, IsPostedToGL: false });
     setModal(row ?? 'add');
   };
 
   const close = () => { setModal(null); setErrors({}); };
+
+  /* ── GL callbacks (edit-mode only) ── */
+  const glCallbacks = !isAdd && modal && modal.id ? {
+    onConfirm: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval' };
+      maintenanceRecordStore.update(modal.id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+      setData(maintenanceRecordStore.getAll());
+    },
+    onApprove: () => {
+      const result = glEngine.post({
+        transactionTypeCode: 'FLEET_MAINT_RECORD',
+        transactionDate:     new Date().toISOString().slice(0, 10),
+        sourceTableName:     'MaintenanceRecord',
+        sourceRecordID:      modal.id,
+        amount:              Number(form.costOfService) || 0,
+        description:         `Fleet Maintenance — ${form.date}`,
+        createdBy:           'System',
+      });
+      if (result.success) {
+        const updates = {
+          GLApprovalStatus: 'Approved',
+          IsPostedToGL:     true,
+          GLPostingRef:     result.documentReference,
+          GLApprovedDate:   new Date().toISOString().slice(0, 10),
+        };
+        maintenanceRecordStore.update(modal.id, updates);
+        setGLState(s => ({ ...s, ...updates }));
+        setData(maintenanceRecordStore.getAll());
+      }
+    },
+    onReject: (note) => {
+      const updates = { GLApprovalStatus: 'Rejected', GLRejectionNote: note };
+      maintenanceRecordStore.update(modal.id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+      setData(maintenanceRecordStore.getAll());
+    },
+    onResubmit: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval', GLRejectionNote: null };
+      maintenanceRecordStore.update(modal.id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+      setData(maintenanceRecordStore.getAll());
+    },
+  } : {};
 
   const save = () => {
     const errs = validate(form);
@@ -223,6 +279,11 @@ export default function MaintenanceRecords() {
                 Rs. {Number(v).toLocaleString()}
               </span>
             ),
+          },
+          {
+            key: 'GLApprovalStatus',
+            label: 'GL Status',
+            render: (v, row) => <GLStatusBadge status={v} isPostedToGL={row.IsPostedToGL} />,
           },
         ]}
         data={filtered}
@@ -503,6 +564,25 @@ export default function MaintenanceRecords() {
               <span style={{ fontSize: 13, fontWeight: 700, color: '#78350f' }}>Rs. {partsTotal.toLocaleString()}</span>
             </div>
           )}
+
+          {/* ── GL Fleet Maintenance ── */}
+          <hr className="divider" style={{ margin: '16px 0' }} />
+          <p className="section-label">GL Fleet Maintenance</p>
+          {isAdd && (
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+              Save this record to begin the GL approval workflow.
+            </p>
+          )}
+          <GLEffectPanel
+            idPrefix={ID}
+            transactionTypeCode="FLEET_MAINT_RECORD"
+            amount={Number(form.costOfService) || 0}
+            glApprovalStatus={glState.GLApprovalStatus}
+            glPostingRef={glState.GLPostingRef}
+            glRejectionNote={glState.GLRejectionNote}
+            isPostedToGL={glState.IsPostedToGL}
+            {...glCallbacks}
+          />
         </FormModal>
       )}
 

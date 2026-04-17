@@ -5,7 +5,18 @@
 import { MOCK } from './mockData';
 import { workshopStockStore } from './workshopStockStore';
 
-let _services = MOCK.vehicleService.map(s => ({ ...s, notes: s.notes ?? '' }));
+const GL_DEFAULTS = {
+  GLApprovalStatus: 'Draft',
+  GLApprovedBy:     null,
+  GLApprovedDate:   null,
+  GLRejectedBy:     null,
+  GLRejectedDate:   null,
+  GLRejectionNote:  null,
+  GLPostingRef:     null,
+  IsPostedToGL:     false,
+};
+
+let _services = MOCK.vehicleService.map(s => ({ ...GL_DEFAULTS, ...s, notes: s.notes ?? '' }));
 
 export const vehicleServiceStore = {
   getAll:  () => [..._services].sort((a, b) => b.serviceDate.localeCompare(a.serviceDate)),

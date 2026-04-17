@@ -4,7 +4,19 @@
  */
 import { MOCK } from './mockData';
 
-let _assets = MOCK.fixedAssets.map(a => ({ ...a }));
+/* Default GL approval columns for existing and new records */
+const GL_DEFAULTS = {
+  GLApprovalStatus: 'Draft',
+  GLApprovedBy:     null,
+  GLApprovedDate:   null,
+  GLRejectedBy:     null,
+  GLRejectedDate:   null,
+  GLRejectionNote:  null,
+  GLPostingRef:     null,
+  IsPostedToGL:     false,
+};
+
+let _assets = MOCK.fixedAssets.map(a => ({ ...GL_DEFAULTS, ...a }));
 
 function nextCode() {
   const max = _assets.reduce((m, a) => {

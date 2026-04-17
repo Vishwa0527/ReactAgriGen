@@ -4,7 +4,8 @@ import { fixedAssetStore } from '../data/fixedAssetStore';
 import { fixedAssetTypeStore } from '../data/fixedAssetTypeStore';
 import { fixedAssetCategoryStore } from '../data/fixedAssetCategoryStore';
 import { MOCK, nameOf } from '../data/mockData';
-import { ListingPage } from '../components/ListingPage';
+import { ListingPage }   from '../components/ListingPage';
+import { GLStatusBadge } from '../components/GLStatusBadge';
 import { Icon } from '../components/Icon';
 
 const ID = 'far';
@@ -23,8 +24,9 @@ export default function FixedAssets() {
   const [search, setSearch]               = useState('');
   const [filterTypeID, setFilterTypeID]   = useState('');
   const [filterCatID, setFilterCatID]     = useState('');
-  const [filterStatus, setFilterStatus]   = useState('Active');
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [filterStatus, setFilterStatus]     = useState('Active');
+  const [filterGLStatus, setFilterGLStatus] = useState('');
+  const [confirmDelete, setConfirmDelete]   = useState(null);
 
   /* Enrichment */
   const enriched = useMemo(() => data.map(a => ({
@@ -38,9 +40,10 @@ export default function FixedAssets() {
   /* Filtering */
   const filtered = useMemo(() => {
     let rows = enriched;
-    if (filterTypeID)  rows = rows.filter(r => r.fixedAssetTypeID === Number(filterTypeID));
-    if (filterCatID)   rows = rows.filter(r => r.fixedAssetCategoryID === Number(filterCatID));
+    if (filterTypeID)   rows = rows.filter(r => r.fixedAssetTypeID === Number(filterTypeID));
+    if (filterCatID)    rows = rows.filter(r => r.fixedAssetCategoryID === Number(filterCatID));
     if (filterStatus !== 'All') rows = rows.filter(r => r.status === filterStatus);
+    if (filterGLStatus) rows = rows.filter(r => r.GLApprovalStatus === filterGLStatus);
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter(r =>
@@ -53,7 +56,7 @@ export default function FixedAssets() {
       );
     }
     return rows;
-  }, [enriched, filterTypeID, filterCatID, filterStatus, search]);
+  }, [enriched, filterTypeID, filterCatID, filterStatus, filterGLStatus, search]);
 
   /* Cascading categories based on type filter */
   const filteredCategories = useMemo(() =>
@@ -75,8 +78,8 @@ export default function FixedAssets() {
     setConfirmDelete(null);
   };
 
-  const clearFilters = () => { setSearch(''); setFilterTypeID(''); setFilterCatID(''); setFilterStatus('Active'); };
-  const isFiltered = search || filterTypeID || filterCatID || filterStatus !== 'Active';
+  const clearFilters = () => { setSearch(''); setFilterTypeID(''); setFilterCatID(''); setFilterStatus('Active'); setFilterGLStatus(''); };
+  const isFiltered = search || filterTypeID || filterCatID || filterStatus !== 'Active' || filterGLStatus;
 
   return (
     <>
@@ -175,6 +178,11 @@ export default function FixedAssets() {
             label: 'Status',
             render: v => <span className={`badge ${STATUS_BADGE[v] ?? 'badge-neutral'}`}>{v}</span>,
           },
+          {
+            key: 'GLApprovalStatus',
+            label: 'GL Status',
+            render: (v, row) => <GLStatusBadge status={v} isPostedToGL={row.IsPostedToGL} />,
+          },
         ]}
         data={filtered}
         onAdd={() => navigate('/assets-register/add')}
@@ -231,6 +239,19 @@ export default function FixedAssets() {
                 </button>
               ))}
             </div>
+            <select
+              id={`${ID}-select-gl-status`}
+              className="form-control"
+              style={{ minWidth: 160 }}
+              value={filterGLStatus}
+              onChange={e => setFilterGLStatus(e.target.value)}
+            >
+              <option value="">All GL Statuses</option>
+              <option value="Draft">GL Draft</option>
+              <option value="PendingApproval">Pending Approval</option>
+              <option value="Approved">GL Approved</option>
+              <option value="Rejected">GL Rejected</option>
+            </select>
             {isFiltered && (
               <button id={`${ID}-btn-filter-clear`} className="btn btn-secondary btn-sm" onClick={clearFilters}>Clear</button>
             )}

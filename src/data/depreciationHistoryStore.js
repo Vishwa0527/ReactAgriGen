@@ -5,7 +5,19 @@
  */
 import { MOCK } from './mockData';
 
-let _history = MOCK.depreciationHistory.map(h => ({ ...h }));
+const GL_DEFAULTS = {
+  GLApprovalStatus: 'Draft',
+  GLApprovedBy:     null,
+  GLApprovedDate:   null,
+  GLRejectedBy:     null,
+  GLRejectedDate:   null,
+  GLRejectionNote:  null,
+  GLPostingRef:     null,
+  IsPostedToGL:     false,
+  BatchReference:   null,
+};
+
+let _history = MOCK.depreciationHistory.map(h => ({ ...GL_DEFAULTS, ...h }));
 
 function nextId() {
   return _history.length ? Math.max(..._history.map(h => h.id)) + 1 : 1;
@@ -43,6 +55,7 @@ export const depreciationHistoryStore = {
    */
   post: (depreciationID, fixedAssetID, date, value, ledgerTransactionRef, groupID, estateID) => {
     const entry = {
+      ...GL_DEFAULTS,
       id: nextId(),
       depreciationID: Number(depreciationID),
       fixedAssetID:   Number(fixedAssetID),
@@ -54,5 +67,21 @@ export const depreciationHistoryStore = {
     };
     _history = [..._history, entry];
     return entry;
+  },
+
+  update: (id, data) => {
+    _history = _history.map(h => h.id === Number(id) ? { ...h, ...data } : h);
+  },
+
+  /** Update GL fields on a set of history entries in one call. */
+  batchUpdate: (ids, data) => {
+    const idSet = new Set(ids.map(Number));
+    _history = _history.map(h => idSet.has(h.id) ? { ...h, ...data } : h);
+  },
+
+  /** Remove a set of history entries (used to clean up rejected batches). */
+  batchRemove: (ids) => {
+    const idSet = new Set(ids.map(Number));
+    _history = _history.filter(h => !idSet.has(h.id));
   },
 };

@@ -53,6 +53,9 @@ import ReportAssetNBV             from './views/ReportAssetNBV';
 import ReportAssetMaintenance     from './views/ReportAssetMaintenance';
 import ReportDailyRunning         from './views/ReportDailyRunning';
 import ReportDriverAssignments    from './views/ReportDriverAssignments';
+import GLMapping                  from './views/GLMapping';
+import GLApprovalQueue            from './views/GLApprovalQueue';
+import LedgerJournalEntries       from './views/LedgerJournalEntries';
 
 import './index.css';
 
@@ -157,6 +160,11 @@ function AppShell() {
             <Route path="/asset-disposal"           element={<AssetDisposal />} />
             <Route path="/asset-disposal/add"       element={<AssetDisposalForm />} />
             <Route path="/asset-disposal/edit/:id"  element={<AssetDisposalForm />} />
+
+            {/* GL Configuration */}
+            <Route path="/gl-mapping"              element={<GLMapping />} />
+            <Route path="/gl-approval-queue"       element={<GLApprovalQueue />} />
+            <Route path="/journal-entries"         element={<LedgerJournalEntries />} />
 
             {/* Reports */}
             <Route path="/reports"                        element={<ReportsHub />} />

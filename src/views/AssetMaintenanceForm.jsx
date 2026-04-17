@@ -6,6 +6,8 @@ import { fixedAssetHistoryStore } from '../data/fixedAssetHistoryStore';
 import { workshopStore } from '../data/workshopStore';
 import { MOCK, nameOf } from '../data/mockData';
 import { GroupEstateFields } from '../components/GroupEstateFields';
+import { GLEffectPanel }      from '../components/GLEffectPanel';
+import { glEngine }           from '../utils/glEngine';
 import { Icon } from '../components/Icon';
 
 const ID = 'amf';
@@ -61,6 +63,14 @@ export default function AssetMaintenanceForm() {
   );
   const [errors, setErrors] = useState({});
 
+  /* ── GL workflow state (edit-mode only) ── */
+  const [glState, setGLState] = useState(() => ({
+    GLApprovalStatus: existing?.GLApprovalStatus ?? 'Draft',
+    GLPostingRef:     existing?.GLPostingRef     ?? null,
+    GLRejectionNote:  existing?.GLRejectionNote  ?? null,
+    IsPostedToGL:     existing?.IsPostedToGL     ?? false,
+  }));
+
   const set = (key, val) => {
     setForm(f => ({ ...f, [key]: val }));
     if (errors[key]) setErrors(e => ({ ...e, [key]: undefined }));
@@ -96,6 +106,56 @@ export default function AssetMaintenanceForm() {
       costs: f.costs.map((c, i) => i === idx ? { ...c, [key]: val } : c),
     }));
   };
+
+  /* ── Derived selected asset (for GL type/category resolution) ── */
+  const selectedAsset = useMemo(
+    () => form.fixedAssetID ? assets.find(a => a.id === Number(form.fixedAssetID)) ?? null : null,
+    [assets, form.fixedAssetID],
+  );
+
+  /* ── GL callbacks (edit-mode only) ── */
+  const glCallbacks = isEdit ? {
+    onConfirm: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval' };
+      assetMaintenanceStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+    onApprove: () => {
+      const result = glEngine.post({
+        transactionTypeCode:  'FA_ASSET_MAINT',
+        transactionDate:      new Date().toISOString().slice(0, 10),
+        sourceTableName:      'AssetMaintenance',
+        sourceRecordID:       existing.id,
+        amount:               parseFloat(form.totalMaintenanceCost) || 0,
+        fixedAssetTypeID:     selectedAsset?.fixedAssetTypeID     ?? null,
+        fixedAssetCategoryID: selectedAsset?.fixedAssetCategoryID ?? null,
+        description:          `Asset Maintenance — ${form.maintenanceCode}`,
+        groupID:              Number(form.groupID)  || null,
+        estateID:             Number(form.estateID) || null,
+        createdBy:            'System',
+      });
+      if (result.success) {
+        const updates = {
+          GLApprovalStatus: 'Approved',
+          IsPostedToGL:     true,
+          GLPostingRef:     result.documentReference,
+          GLApprovedDate:   new Date().toISOString().slice(0, 10),
+        };
+        assetMaintenanceStore.update(id, updates);
+        setGLState(s => ({ ...s, ...updates }));
+      }
+    },
+    onReject: (note) => {
+      const updates = { GLApprovalStatus: 'Rejected', GLRejectionNote: note };
+      assetMaintenanceStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+    onResubmit: () => {
+      const updates = { GLApprovalStatus: 'PendingApproval', GLRejectionNote: null };
+      assetMaintenanceStore.update(id, updates);
+      setGLState(s => ({ ...s, ...updates }));
+    },
+  } : {};
 
   /* Auto-fill from asset selection */
   const handleAssetSelect = (assetID) => {
@@ -331,6 +391,30 @@ export default function AssetMaintenanceForm() {
                 ))}
               </div>
             )}
+          </section>
+
+          <hr className="divider" />
+
+          {/* ── Section 5: GL Asset Maintenance ── */}
+          <section>
+            <p className="section-label">GL Asset Maintenance</p>
+            {!isEdit && (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Save this record to begin the GL approval workflow.
+              </p>
+            )}
+            <GLEffectPanel
+              idPrefix={ID}
+              transactionTypeCode="FA_ASSET_MAINT"
+              fixedAssetTypeID={selectedAsset?.fixedAssetTypeID ?? null}
+              fixedAssetCategoryID={selectedAsset?.fixedAssetCategoryID ?? null}
+              amount={parseFloat(form.totalMaintenanceCost) || 0}
+              glApprovalStatus={glState.GLApprovalStatus}
+              glPostingRef={glState.GLPostingRef}
+              glRejectionNote={glState.GLRejectionNote}
+              isPostedToGL={glState.IsPostedToGL}
+              {...glCallbacks}
+            />
           </section>
 
         </div>

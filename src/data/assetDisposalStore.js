@@ -14,7 +14,18 @@ import { fixedAssetStore } from './fixedAssetStore';
 import { depreciationStore } from './depreciationStore';
 import { fixedAssetHistoryStore } from './fixedAssetHistoryStore';
 
-let _disposals = MOCK.assetDisposals.map(d => ({ ...d }));
+const GL_DEFAULTS = {
+  GLApprovalStatus: 'Draft',
+  GLApprovedBy:     null,
+  GLApprovedDate:   null,
+  GLRejectedBy:     null,
+  GLRejectedDate:   null,
+  GLRejectionNote:  null,
+  GLPostingRef:     null,
+  IsPostedToGL:     false,
+};
+
+let _disposals = MOCK.assetDisposals.map(d => ({ ...GL_DEFAULTS, ...d }));
 
 function nextCode() {
   const max = _disposals.reduce((m, d) => {

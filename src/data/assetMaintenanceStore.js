@@ -6,7 +6,19 @@
  */
 import { MOCK } from './mockData';
 
+const GL_DEFAULTS = {
+  GLApprovalStatus: 'Draft',
+  GLApprovedBy:     null,
+  GLApprovedDate:   null,
+  GLRejectedBy:     null,
+  GLRejectedDate:   null,
+  GLRejectionNote:  null,
+  GLPostingRef:     null,
+  IsPostedToGL:     false,
+};
+
 let _maintenances = MOCK.assetMaintenances.map(m => ({
+  ...GL_DEFAULTS,
   ...m,
   details: m.details?.map(d => ({ ...d })) || [],
   costs:   m.costs?.map(c => ({ ...c })) || [],

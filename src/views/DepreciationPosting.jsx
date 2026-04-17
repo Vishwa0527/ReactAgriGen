@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { depreciationStore } from '../data/depreciationStore';
+import { depreciationStore }        from '../data/depreciationStore';
 import { depreciationHistoryStore } from '../data/depreciationHistoryStore';
-import { fixedAssetStore } from '../data/fixedAssetStore';
-import { ListingPage } from '../components/ListingPage';
-import { Icon } from '../components/Icon';
+import { fixedAssetStore }          from '../data/fixedAssetStore';
+import { GLEffectPanel }            from '../components/GLEffectPanel';
+import { glEngine }                 from '../utils/glEngine';
+import { Icon }                     from '../components/Icon';
 
 const ID = 'dp';
 
@@ -33,72 +34,146 @@ export default function DepreciationPosting() {
 
   const [schedules] = useState(() => depreciationStore.getAll());
   const [assets]    = useState(() => fixedAssetStore.getAll());
-  const [yearMonth, setYearMonth]   = useState(defaultPeriod);
-  const [ledgerRef, setLedgerRef]   = useState('');
-  const [selected, setSelected]     = useState(new Set());
-  const [postSuccess, setPostSuccess] = useState(null); // number of entries posted
+  const [yearMonth, setYearMonth] = useState(defaultPeriod);
+  const [ledgerRef, setLedgerRef] = useState('');
+  const [selected, setSelected]   = useState(new Set());
 
-  /* Enrich each schedule with monthly amount + already-posted flag for the chosen period */
+  /* ── GL batch workflow ── */
+  const [step, setStep]                         = useState('select'); // 'select' | 'pending' | 'done'
+  const [historyRevision, setHistoryRevision]   = useState(0);
+  const [batchRef, setBatchRef]                 = useState('');
+  const [batchEntryIDs, setBatchEntryIDs]       = useState([]);
+  const [batchAmount, setBatchAmount]           = useState(0);
+  const [batchCount, setBatchCount]             = useState(0);
+  const [batchPeriodYM, setBatchPeriodYM]       = useState('');
+  const [batchGLStatus, setBatchGLStatus]       = useState('PendingApproval');
+  const [batchGLPostingRef, setBatchGLPostingRef]     = useState(null);
+  const [batchGLRejectionNote, setBatchGLRejectionNote] = useState(null);
+
+  /* Enrich each schedule with monthly amount + already-posted flag.
+   * A period is "already posted" only for Draft (legacy/MOCK) entries or
+   * entries where IsPostedToGL=true (approved). PendingApproval / Rejected
+   * entries don't block re-selection (rejected batches are removed from store). */
   const enriched = useMemo(() => {
     const history = depreciationHistoryStore.getAll();
     return schedules
       .filter(s => s.status === 'Active')
       .map(s => {
-        const asset          = assets.find(a => a.id === s.fixedAssetID);
-        const monthlyAmount  = (s.depreciationValue || 0) / 12;
-        const alreadyPosted  = history.some(h =>
+        const asset         = assets.find(a => a.id === s.fixedAssetID);
+        const monthlyAmount = (s.depreciationValue || 0) / 12;
+        const alreadyPosted = history.some(h =>
           h.depreciationID === s.id &&
-          (h.date || '').startsWith(yearMonth)
+          (h.date || '').startsWith(yearMonth) &&
+          (h.GLApprovalStatus === 'Draft' || h.IsPostedToGL === true)
         );
-        const totalPosted    = depreciationHistoryStore.totalPostedForSchedule(s.id);
-        const bookValue      = Math.max(s.residualValue || 0, (s.assetValue || 0) - totalPosted);
-        const fullyDep       = bookValue <= (s.residualValue || 0);
-        return { ...s, _asset: asset, _monthlyAmount: monthlyAmount, _alreadyPosted: alreadyPosted, _bookValue: bookValue, _fullyDep: fullyDep };
+        const totalPosted = depreciationHistoryStore.totalPostedForSchedule(s.id);
+        const bookValue   = Math.max(s.residualValue || 0, (s.assetValue || 0) - totalPosted);
+        const fullyDep    = bookValue <= (s.residualValue || 0);
+        return {
+          ...s,
+          _asset: asset, _monthlyAmount: monthlyAmount,
+          _alreadyPosted: alreadyPosted, _bookValue: bookValue, _fullyDep: fullyDep,
+        };
       });
-  }, [schedules, assets, yearMonth]);
+  // historyRevision forces recompute after store mutations
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules, assets, yearMonth, historyRevision]);
 
-  /* Auto-select all eligible rows whenever period changes */
+  /* Auto-select all eligible rows whenever period or history revision changes */
   useEffect(() => {
     const eligible = new Set(
       enriched.filter(s => !s._alreadyPosted && !s._fullyDep).map(s => s.id)
     );
     setSelected(eligible);
-    setPostSuccess(null);
-  }, [yearMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearMonth, historyRevision]);
 
-  const eligibleCount  = enriched.filter(s => !s._alreadyPosted && !s._fullyDep).length;
-  const selectedCount  = enriched.filter(s => selected.has(s.id) && !s._alreadyPosted && !s._fullyDep).length;
-  const totalToPost    = enriched
+  const eligibleCount = enriched.filter(s => !s._alreadyPosted && !s._fullyDep).length;
+  const selectedCount = enriched.filter(s => selected.has(s.id) && !s._alreadyPosted && !s._fullyDep).length;
+  const totalToPost   = enriched
     .filter(s => selected.has(s.id) && !s._alreadyPosted && !s._fullyDep)
     .reduce((sum, s) => sum + s._monthlyAmount, 0);
 
-  const toggle = (id) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
+  const toggle    = (id) => setSelected(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+  const selectAll = () => setSelected(new Set(enriched.filter(s => !s._alreadyPosted && !s._fullyDep).map(s => s.id)));
+  const clearAll  = () => setSelected(new Set());
 
-  const selectAll  = () => setSelected(new Set(enriched.filter(s => !s._alreadyPosted && !s._fullyDep).map(s => s.id)));
-  const clearAll   = () => setSelected(new Set());
-
-  const doPost = () => {
+  /* ── Submit the selected batch for GL approval ── */
+  const doSubmitForApproval = () => {
     const toPost = enriched.filter(s => selected.has(s.id) && !s._alreadyPosted && !s._fullyDep);
     if (toPost.length === 0) return;
     const endDate = periodEndDate(yearMonth);
-    toPost.forEach(s => {
-      depreciationHistoryStore.post(
+    const ref     = `DEP-${yearMonth.replace('-', '')}-${Date.now().toString(36).toUpperCase()}`;
+
+    const ids = toPost.map(s => {
+      const entry = depreciationHistoryStore.post(
         s.id, s.fixedAssetID, endDate, s._monthlyAmount,
-        ledgerRef.trim() || null, s.groupID, s.estateID
+        ledgerRef.trim() || null, s.groupID, s.estateID,
       );
+      return entry.id;
     });
-    setPostSuccess(toPost.length);
+    depreciationHistoryStore.batchUpdate(ids, { GLApprovalStatus: 'PendingApproval', BatchReference: ref });
+    setHistoryRevision(r => r + 1);
+
+    setBatchRef(ref);
+    setBatchEntryIDs(ids);
+    setBatchAmount(totalToPost);
+    setBatchCount(toPost.length);
+    setBatchPeriodYM(yearMonth);
+    setBatchGLStatus('PendingApproval');
+    setBatchGLPostingRef(null);
+    setBatchGLRejectionNote(null);
     setSelected(new Set());
     setLedgerRef('');
+    setStep('pending');
   };
 
-  if (postSuccess !== null) {
+  /* ── GL batch approval callbacks ── */
+  const handleBatchApprove = () => {
+    const result = glEngine.post({
+      transactionTypeCode: 'FA_DEPRECIATION',
+      transactionDate:     periodEndDate(batchPeriodYM),
+      sourceTableName:     'DepreciationHistory',
+      sourceRecordID:      batchEntryIDs[0],
+      amount:              batchAmount,
+      description:         `Depreciation Batch — ${fmtPeriod(batchPeriodYM)}`,
+      batchReference:      batchRef,
+      createdBy:           'System',
+    });
+    if (result.success) {
+      depreciationHistoryStore.batchUpdate(batchEntryIDs, {
+        GLApprovalStatus: 'Approved',
+        IsPostedToGL:     true,
+        GLPostingRef:     result.documentReference,
+        GLApprovedDate:   new Date().toISOString().slice(0, 10),
+      });
+      setHistoryRevision(r => r + 1);
+      setBatchGLStatus('Approved');
+      setBatchGLPostingRef(result.documentReference);
+      setStep('done');
+    }
+  };
+
+  const handleBatchReject = (note) => {
+    /* Remove rejected entries — keeps the period eligible for resubmission */
+    depreciationHistoryStore.batchRemove(batchEntryIDs);
+    setHistoryRevision(r => r + 1);
+    setBatchGLStatus('Rejected');
+    setBatchGLRejectionNote(note);
+  };
+
+  const handleBatchResubmit = () => {
+    setBatchRef(''); setBatchEntryIDs([]); setBatchAmount(0); setBatchCount(0);
+    setBatchGLStatus('PendingApproval'); setBatchGLPostingRef(null); setBatchGLRejectionNote(null);
+    setStep('select');
+  };
+
+  /* ═══════════════════════════════════════════════════════════
+   * DONE step
+   * ═══════════════════════════════════════════════════════════ */
+  if (step === 'done') {
     return (
       <div className="fade-up" style={{ maxWidth: 560, margin: '60px auto', textAlign: 'center' }}>
         <div style={{
@@ -110,18 +185,24 @@ export default function DepreciationPosting() {
           <Icon name="check" style={{ width: 30, height: 30 }} />
         </div>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
-          Depreciation Posted
+          Depreciation Posted to GL
         </h2>
-        <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.7 }}>
-          <strong>{postSuccess}</strong> schedule{postSuccess !== 1 ? 's' : ''} posted for{' '}
-          <strong>{fmtPeriod(yearMonth)}</strong>.
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.7 }}>
+          <strong>{batchCount}</strong> schedule{batchCount !== 1 ? 's' : ''} posted for{' '}
+          <strong>{fmtPeriod(batchPeriodYM)}</strong>.
           Entries are now visible in Depreciation History.
         </p>
+        {batchGLPostingRef && (
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>
+            GL Ref:&nbsp;
+            <strong style={{ fontFamily: 'monospace', color: 'var(--primary)' }}>{batchGLPostingRef}</strong>
+          </p>
+        )}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
           <button
             id={`${ID}-btn-postAnother`}
             className="btn btn-secondary"
-            onClick={() => setPostSuccess(null)}
+            onClick={() => setStep('select')}
           >
             Post Another Period
           </button>
@@ -137,6 +218,72 @@ export default function DepreciationPosting() {
     );
   }
 
+  /* ═══════════════════════════════════════════════════════════
+   * PENDING step — GL approval for the submitted batch
+   * ═══════════════════════════════════════════════════════════ */
+  if (step === 'pending') {
+    return (
+      <div className="fade-up">
+        <div className="page-title-bar">
+          <div>
+            <h1 className="page-title">Post Depreciation — Pending GL Approval</h1>
+            <p className="page-subtitle">Approve or reject the GL journal entry for this batch</p>
+          </div>
+        </div>
+
+        {/* Batch summary */}
+        <div className="card" style={{ maxWidth: 680, marginBottom: 20 }}>
+          <div className="card-body">
+            <p className="section-label">Batch Summary</p>
+            <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Period</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {fmtPeriod(batchPeriodYM)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Schedules</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>{batchCount}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Total Amount</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--warning)' }}>
+                  {fmtCurrency(batchAmount)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Batch Ref</div>
+                <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  {batchRef}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* GL approval panel */}
+        <div style={{ maxWidth: 680 }}>
+          <GLEffectPanel
+            idPrefix={`${ID}-batch`}
+            transactionTypeCode="FA_DEPRECIATION"
+            amount={batchAmount}
+            glApprovalStatus={batchGLStatus}
+            glPostingRef={batchGLPostingRef}
+            glRejectionNote={batchGLRejectionNote}
+            isPostedToGL={batchGLStatus === 'Approved'}
+            onApprove={batchGLStatus !== 'Rejected' ? handleBatchApprove : undefined}
+            onReject={batchGLStatus !== 'Rejected'  ? handleBatchReject  : undefined}
+            onResubmit={batchGLStatus === 'Rejected' ? handleBatchResubmit : undefined}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+   * SELECT step — period & schedule selection
+   * ═══════════════════════════════════════════════════════════ */
   return (
     <div className="fade-up">
       {/* Page title bar */}
@@ -152,7 +299,7 @@ export default function DepreciationPosting() {
           </button>
           <div>
             <h1 className="page-title">Post Depreciation</h1>
-            <p className="page-subtitle">Batch month-end depreciation posting — select a period and post all active schedules</p>
+            <p className="page-subtitle">Select a period and schedules, then submit for GL approval</p>
           </div>
         </div>
       </div>
@@ -223,13 +370,16 @@ export default function DepreciationPosting() {
             onClick={clearAll}
           >Clear</button>
           <button
-            id={`${ID}-btn-post`}
-            className="btn btn-success"
+            id={`${ID}-btn-submit`}
+            className="btn btn-primary"
             disabled={selectedCount === 0}
-            onClick={doPost}
+            onClick={doSubmitForApproval}
           >
-            <Icon name="check" style={{ width: 14, height: 14 }} />
-            Post {selectedCount > 0 ? `${selectedCount} Schedule${selectedCount !== 1 ? 's' : ''}` : 'Selected'}
+            <Icon name="upload" style={{ width: 14, height: 14 }} />
+            {selectedCount > 0
+              ? `Submit ${selectedCount} Schedule${selectedCount !== 1 ? 's' : ''} for Approval`
+              : 'Submit for Approval'
+            }
           </button>
         </div>
       </div>
@@ -326,6 +476,18 @@ export default function DepreciationPosting() {
           </table>
         </div>
       </div>
+
+      {/* GL Journal Preview — live as user selects schedules */}
+      {selectedCount > 0 && (
+        <div style={{ marginTop: 20, maxWidth: 680 }}>
+          <p className="section-label" style={{ marginBottom: 8 }}>GL Journal Preview</p>
+          <GLEffectPanel
+            idPrefix={`${ID}-preview`}
+            transactionTypeCode="FA_DEPRECIATION"
+            amount={totalToPost}
+          />
+        </div>
+      )}
     </div>
   );
 }

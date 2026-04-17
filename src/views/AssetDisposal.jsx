@@ -4,6 +4,7 @@ import { assetDisposalStore } from '../data/assetDisposalStore';
 import { fixedAssetStore } from '../data/fixedAssetStore';
 import { MOCK } from '../data/mockData';
 import { ListingPage } from '../components/ListingPage';
+import { GLStatusBadge } from '../components/GLStatusBadge';
 import { Icon } from '../components/Icon';
 
 const ID = 'ad';
@@ -43,7 +44,8 @@ export default function AssetDisposal() {
   const [data, setData]                   = useState(() => assetDisposalStore.getAll());
   const [assets]                          = useState(() => fixedAssetStore.getAll());
   const [search, setSearch]               = useState('');
-  const [filterType, setFilterType]       = useState('');
+  const [filterType, setFilterType]         = useState('');
+  const [filterGLStatus, setFilterGLStatus] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   /* Workflow modals */
   const [confirmApprove, setConfirmApprove] = useState(null);   // { row }
@@ -58,7 +60,8 @@ export default function AssetDisposal() {
 
   const filtered = useMemo(() => {
     let rows = enriched;
-    if (filterType) rows = rows.filter(r => r.disposalType === filterType);
+    if (filterType)     rows = rows.filter(r => r.disposalType === filterType);
+    if (filterGLStatus) rows = rows.filter(r => r.GLApprovalStatus === filterGLStatus);
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter(r =>
@@ -69,7 +72,7 @@ export default function AssetDisposal() {
       );
     }
     return rows;
-  }, [enriched, search, filterType]);
+  }, [enriched, search, filterType, filterGLStatus]);
 
   /* Stats */
   const totalDisposals    = data.length;
@@ -192,6 +195,11 @@ export default function AssetDisposal() {
             render: v => <span className={`badge ${STATUS_BADGE[v] ?? 'badge-neutral'}`}>{v}</span>,
           },
           {
+            key: 'GLApprovalStatus',
+            label: 'GL Status',
+            render: (v, row) => <GLStatusBadge status={v} isPostedToGL={row.IsPostedToGL} />,
+          },
+          {
             key: 'id',
             label: 'Workflow',
             render: (_, row) => {
@@ -243,11 +251,25 @@ export default function AssetDisposal() {
                 <option value="Scrap">Scrap</option>
               </select>
             </div>
-            {(search || filterType) && (
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+              <select
+                id={`${ID}-select-gl-status`}
+                className="form-control"
+                value={filterGLStatus}
+                onChange={e => setFilterGLStatus(e.target.value)}
+              >
+                <option value="">All GL Statuses</option>
+                <option value="Draft">GL Draft</option>
+                <option value="PendingApproval">Pending Approval</option>
+                <option value="Approved">GL Approved</option>
+                <option value="Rejected">GL Rejected</option>
+              </select>
+            </div>
+            {(search || filterType || filterGLStatus) && (
               <button
                 id={`${ID}-btn-filter-clear`}
                 className="btn btn-secondary btn-sm"
-                onClick={() => { setSearch(''); setFilterType(''); }}
+                onClick={() => { setSearch(''); setFilterType(''); setFilterGLStatus(''); }}
               >Clear</button>
             )}
             <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>

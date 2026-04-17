@@ -82,6 +82,18 @@ export const NAV = [
     ],
   },
 
+  /* ══════════════════════ GL CONFIGURATION ══════════════════════ */
+  { section: 'GL Configuration', isModuleHeader: true, items: [] },
+
+  {
+    section: 'GL Setup',
+    items: [
+      { label: 'GL Account Mapping',    path: '/gl-mapping',           icon: 'link'      },
+      { label: 'GL Approval Queue',     path: '/gl-approval-queue',    icon: 'check'     },
+      { label: 'Journal Entries',       path: '/journal-entries',      icon: 'dollar'    },
+    ],
+  },
+
   /* ═══════════════════════════ REPORTS ══════════════════════════ */
   { section: 'Reports', isModuleHeader: true, items: [] },
 
